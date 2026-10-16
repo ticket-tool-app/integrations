@@ -10,7 +10,7 @@ Connects a Minecraft server to one Discord server's [Ticket Tool](https://ticket
 ## Setup
 
 1. On the Ticket Tool dashboard, open **Automations → Connections → Game server plugins** and click **Create a Minecraft key**. Name it after the server (for example "Survival") and copy the key. It's only shown once.
-2. Put `TicketToolLink-<version>.jar` in the server's `plugins` folder and start the server once. This creates `plugins/TicketToolLink/config.yml` and `messages.yml`.
+2. Download `TicketToolLink-<version>.jar` from the [latest Minecraft release](https://github.com/ticket-tool-app/integrations/releases?q=minecraft). Put it in the server's `plugins` folder and start the server once. This creates `plugins/TicketToolLink/config.yml` and `messages.yml`.
 3. Paste the key into `config.yml`:
 
    ```yaml

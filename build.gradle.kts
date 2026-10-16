@@ -1,6 +1,6 @@
 allprojects {
     group = "app.tickettool"
-    version = "1.0.0-SNAPSHOT"
+    version = providers.gradleProperty("releaseVersion").getOrElse("1.0.0-SNAPSHOT")
 }
 
 subprojects {
