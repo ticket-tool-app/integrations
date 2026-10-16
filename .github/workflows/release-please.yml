@@ -3,6 +3,7 @@ name: Release Please
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -31,8 +32,8 @@ jobs:
         if: steps.prepare.outputs.pr
         env:
           GH_TOKEN: ${{ github.token }}
-          PR: ${{ fromJSON(steps.prepare.outputs.pr).number }}
-        run: gh pr merge "$PR" --squash --repo "$GITHUB_REPOSITORY"
+          PR_JSON: ${{ steps.prepare.outputs.pr }}
+        run: gh pr merge "$(jq -r .number <<<"$PR_JSON")" --squash --repo "$GITHUB_REPOSITORY"
 
       - id: publish
         if: steps.prepare.outputs.pr
