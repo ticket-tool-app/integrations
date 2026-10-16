@@ -1,0 +1,68 @@
+name: Release Rust
+
+on:
+  push:
+    tags: ["rust-v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Read version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#rust-v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "Tag $GITHUB_REF_NAME is not rust-vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Test SDK
+        run: |
+          dotnet test sdk-dotnet/tests/TicketTool.PluginSdk.Tests
+          dotnet test sdk-dotnet/tests/TicketTool.PluginSdk.Tests -p:SdkTargetFramework=netstandard2.1
+
+      - name: Build
+        run: python3 rust/build.py "${{ steps.version.outputs.version }}"
+
+      - name: Check
+        run: |
+          dotnet build rust/check
+          dotnet build rust/check -p:Carbon=true
+          dotnet test rust/tests
+
+      - name: Checksum
+        working-directory: rust/dist
+        run: sha256sum "TicketToolLink-rust-${{ steps.version.outputs.version }}.cs" > "TicketToolLink-rust-${{ steps.version.outputs.version }}.cs.sha256"
+
+      # Several plugins release from this repo, so GitHub's single "latest" badge
+      # would point at whichever shipped last; docs link to a filtered list instead.
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          prerelease=""
+          [[ "$VERSION" == *-* ]] && prerelease="--prerelease"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Ticket Tool Link for Rust $VERSION" \
+            --generate-notes \
+            --verify-tag \
+            --latest=false \
+            $prerelease \
+            "rust/dist/TicketToolLink-rust-$VERSION.cs" \
+            "rust/dist/TicketToolLink-rust-$VERSION.cs.sha256"

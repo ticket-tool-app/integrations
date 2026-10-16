@@ -1,0 +1,68 @@
+name: CI .NET
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdk-dotnet/**"
+      - "rust/**"
+      - "cs2/**"
+      - "spec/test-vectors/**"
+      - ".github/workflows/ci-dotnet.yml"
+  pull_request:
+    paths:
+      - "sdk-dotnet/**"
+      - "rust/**"
+      - "cs2/**"
+      - "spec/test-vectors/**"
+      - ".github/workflows/ci-dotnet.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: SDK, Rust and CS2 plugins
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Test SDK (net8.0 build)
+        run: dotnet test sdk-dotnet/tests/TicketTool.PluginSdk.Tests
+
+      # The build Oxide and Carbon load, run through the same tests.
+      - name: Test SDK (netstandard2.1 build)
+        run: dotnet test sdk-dotnet/tests/TicketTool.PluginSdk.Tests -p:SdkTargetFramework=netstandard2.1
+
+      - name: Build Rust single-file plugin
+        run: python3 rust/build.py
+
+      # Compiles the release file as C# 7.3 against stub Oxide and Rust types, for
+      # both Oxide and Carbon, then runs it against the fake Ticket Tool server.
+      - name: Check Rust plugin
+        run: |
+          dotnet build rust/check
+          dotnet build rust/check -p:Carbon=true
+          dotnet test rust/tests
+
+      - name: Test CS2 plugin
+        run: dotnet test cs2/tests/TicketToolLink.Tests
+
+      - name: Package CS2 plugin
+        run: cs2/package.sh
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: TicketToolLink-dotnet
+          path: |
+            rust/dist/TicketToolLink.cs
+            cs2/dist/TicketToolLink-cs2-*.zip
+          if-no-files-found: error
