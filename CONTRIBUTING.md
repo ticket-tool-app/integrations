@@ -4,7 +4,7 @@ Thanks for helping out. Bug reports, fixes and support for more ban plugins are 
 
 ## Setup
 
-You need Java 21. Then:
+Each plugin builds on its own. For the Minecraft plugin and the Java SDK you need Java 21:
 
 ```bash
 ./gradlew build      # compile, test, and build the plugin jar
@@ -13,9 +13,11 @@ You need Java 21. Then:
 
 To try the plugin, copy `minecraft/build/libs/TicketToolLink-*.jar` into a Paper 1.20.6+ test server. For local work against a development Ticket Tool, set `api-url` in `config.yml` to `http://localhost:3001`; plain `http://` is only accepted for localhost.
 
+For FiveM/RedM and the TypeScript SDK you need Node 20+: run `npm ci && npm test` in `fivem/` or `sdk-ts/`. For Garry's Mod you need LuaJIT or Lua 5.1: run `luajit tests/run.lua` in `gmod/`.
+
 ## Ground rules
 
-- **The SDK has no runtime dependencies.** It uses only the JDK (`java.net.http`, `javax.crypto`) and its own small JSON codec, so it can't clash with whatever the host platform ships. Test-only dependencies are fine.
+- **The SDKs have no runtime dependencies.** The Java SDK uses only the JDK and its own small JSON codec, and the TypeScript SDK only Node's built-ins, so neither can clash with whatever the host platform ships. Test-only dependencies are fine.
 - **Match the protocol.** [spec/PROTOCOL.md](spec/PROTOCOL.md) is the contract. Every SDK must pass [spec/test-vectors/v1.json](spec/test-vectors/v1.json), and the plugin must meet the conformance checklist at the end of the spec.
 - **Never touch game state off its thread.** Use the `Scheduler` abstraction in `minecraft/.../platform`, which does the right thing on Paper, Folia and Spigot.
 - **Never log the key.** Log `ttp_<keyId>` at most.
@@ -29,8 +31,8 @@ Ban plugins are called through reflection (see `minecraft/.../bans/`), so the bu
 
 ## Pull requests
 
-Keep them focused, include tests for SDK changes, and make sure `./gradlew build` passes. CI runs the same command.
+Keep them focused, include tests for SDK changes, and make sure the build and tests for the folder you changed pass. CI runs the same commands.
 
 ## Releases
 
-Push a tag `minecraft-vMAJOR.MINOR.PATCH` on `main` and the Release Minecraft workflow builds the plugin at that version and publishes `TicketToolLink-<version>.jar` with its SHA-256 checksum to GitHub Releases. A tag with a suffix such as `minecraft-v1.1.0-beta.1` publishes as a pre-release. Each plugin has its own tag prefix, so one repo can release plugins independently.
+Push a tag `minecraft-vMAJOR.MINOR.PATCH` on `main` and the Release Minecraft workflow builds the plugin at that version and publishes `TicketToolLink-<version>.jar` with its SHA-256 checksum to GitHub Releases. A tag with a suffix such as `minecraft-v1.1.0-beta.1` publishes as a pre-release. The FiveM/RedM resource and the Garry's Mod addon release the same way from `fivem-v*` and `gmod-v*` tags. Each plugin has its own tag prefix, so one repo can release plugins independently.

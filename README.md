@@ -9,17 +9,17 @@
   <a href="https://ticket-tool.app/discord"><img src="https://img.shields.io/badge/Support-Discord-5865F2?logo=discord&logoColor=white" alt="Support server"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-0b0b0b" alt="MIT license"></a>
   <br>
-  <img src="https://img.shields.io/badge/Java%2021-ED8B00?logo=openjdk&logoColor=white" alt="Java 21">
-  <img src="https://img.shields.io/badge/Paper-1.20.6%2B-444444" alt="Paper 1.20.6+">
-  <img src="https://img.shields.io/badge/Folia-supported-444444" alt="Folia supported">
-  <img src="https://img.shields.io/badge/Gradle-02303A?logo=gradle&logoColor=white" alt="Gradle">
+  <a href="https://github.com/ticket-tool-app/integrations/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ticket-tool-app/integrations/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://github.com/ticket-tool-app/integrations/releases?q=minecraft"><img src="https://img.shields.io/github/v/release/ticket-tool-app/integrations?filter=minecraft-v*&label=release&color=444444" alt="Minecraft release"></a>
+  <a href="https://github.com/ticket-tool-app/integrations/releases?q=fivem"><img src="https://img.shields.io/github/v/release/ticket-tool-app/integrations?filter=fivem-v*&label=release&color=444444" alt="FiveM and RedM release"></a>
+  <a href="https://github.com/ticket-tool-app/integrations/releases?q=gmod"><img src="https://img.shields.io/github/v/release/ticket-tool-app/integrations?filter=gmod-v*&label=release&color=444444" alt="Garry's Mod release"></a>
 </p>
 
 ---
 
 ## About
 
-A game plugin connects your game server to one Discord server. When someone opens a ticket, Ticket Tool asks the plugin about the opener's linked player and shows staff what it says: name, UUID, whether they're online, when they were last seen and any active ban. Players link their game account to Discord by typing a short code in game.
+A game plugin connects your game server to one Discord server. When someone opens a ticket, Ticket Tool asks the plugin about the opener's linked player and shows staff what it says: name, UUID, whether they're online, when they were last seen and any active ban. Minecraft players link their account by typing a short code in game; FiveM and RedM players are matched by their Discord account, and Garry's Mod players by the Steam account they linked to Discord.
 
 The plugin only makes outbound HTTPS requests. Ticket Tool never connects to your game server, its database or your ban plugin.
 
@@ -29,34 +29,33 @@ The plugin only makes outbound HTTPS requests. Ticket Tool never connects to you
 
 | Path | What it is |
 | --- | --- |
-| [`minecraft/`](minecraft/README.md) | **Ticket Tool Link**, the Minecraft plugin for Paper, Folia and Spigot 1.20.6+ |
+| [`minecraft/`](minecraft/README.md) | **Ticket Tool Link** for Paper, Folia and Spigot 1.20.6+ |
+| [`fivem/`](fivem/README.md) | **Ticket Tool Link** for FiveM and RedM, one resource for both |
+| [`gmod/`](gmod/README.md) | **Ticket Tool Link** for Garry's Mod, a pure Lua addon |
 | [`sdk-java/`](sdk-java/README.md) | `ticket-tool-plugin-sdk`, a dependency-free Java 21 client for the protocol |
-| [`sdk-ts/`](sdk-ts/README.md) | TypeScript SDK (planned) |
+| [`sdk-ts/`](sdk-ts/README.md) | `@ticket-tool/plugin-sdk`, a dependency-free Node client for the protocol |
 | [`spec/`](spec/README.md) | The protocol spec and shared test vectors every SDK must pass |
 
 ## Quick start for server owners
 
-1. On the Ticket Tool dashboard, go to **Automations → Connections → Game server plugins** and create a Minecraft key. Copy it: it's only shown once.
-2. Download `TicketToolLink-<version>.jar` from the [latest Minecraft release](https://github.com/ticket-tool-app/integrations/releases?q=minecraft), drop it into your server's `plugins` folder and start the server once.
-3. Paste the key into `plugins/TicketToolLink/config.yml`, then run `/ticketlink reload`.
+1. On the Ticket Tool dashboard, go to **Automations → Connections → Game server plugins** and create a key for your game. Copy it: it's only shown once.
+2. Download the plugin and follow its guide:
 
-The full guide, including ban plugins and networks, is in [minecraft/README.md](minecraft/README.md).
+| Game | Download | Guide |
+| --- | --- | --- |
+| Minecraft | [`TicketToolLink-<version>.jar`](https://github.com/ticket-tool-app/integrations/releases?q=minecraft) | [minecraft/README.md](minecraft/README.md) |
+| FiveM and RedM | [`ticket-tool-link-fivem-<version>.zip`](https://github.com/ticket-tool-app/integrations/releases?q=fivem) | [fivem/README.md](fivem/README.md) |
+| Garry's Mod | [`ticket_tool_link-gmod-<version>.zip`](https://github.com/ticket-tool-app/integrations/releases?q=gmod) | [gmod/README.md](gmod/README.md) |
 
-## Not in version 1
-
-- **Proxy plugin.** On Velocity or BungeeCord, install the plugin on each backend with its own key, not on the proxy. A proxy edition may come later.
-- **Bedrock players.** Geyser/Floodgate accounts can't link, because Ticket Tool verifies every UUID with Mojang.
-- **Offline-mode servers.** Same reason: offline-mode UUIDs aren't real Java Edition accounts. Behind a proxy that forwards Mojang UUIDs, backends in offline mode are fine.
+Every release has a `.sha256` checksum next to it. What each plugin doesn't support yet is listed in its guide.
 
 ## Building
 
-Java 21 is required. Everything else is fetched by the Gradle wrapper.
-
-```bash
-./gradlew build
-```
-
-The plugin jar lands in `minecraft/build/libs/`, with the SDK inside it.
+| Path | Needs | Build and test |
+| --- | --- | --- |
+| `minecraft/`, `sdk-java/` | Java 21 (Gradle comes with the wrapper) | `./gradlew build` |
+| `fivem/`, `sdk-ts/` | Node 20+ | `npm ci && npm test` in the folder |
+| `gmod/` | LuaJIT or Lua 5.1 | `luajit tests/run.lua` in `gmod/` |
 
 ## Contributing
 
