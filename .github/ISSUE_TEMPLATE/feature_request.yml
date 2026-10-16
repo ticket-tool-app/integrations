@@ -1,0 +1,57 @@
+name: Feature request
+description: Suggest something a plugin or SDK should be able to do.
+title: "[Feature]: "
+labels: ["enhancement", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem behind the request as well as the feature itself.
+        Knowing what you are trying to achieve often opens up a better solution
+        than the one you started with.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which part?
+      options:
+        - Minecraft plugin (Ticket Tool Link)
+        - Java SDK
+        - A new game or platform
+        - Protocol
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: What does your staff team do today, and where does it fall down?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like the plugin to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried instead?
+      description: Workarounds you are using now, or other approaches you considered.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I have searched the existing issues and this has not already been requested.
+          required: true
+        - label: I have checked the [documentation](https://ticket-tool.app/docs) and this is not already possible.
+          required: true
