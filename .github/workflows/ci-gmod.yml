@@ -1,0 +1,52 @@
+name: CI Garry's Mod
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "gmod/**"
+      - "spec/test-vectors/**"
+      - ".github/workflows/ci-gmod.yml"
+  pull_request:
+    paths:
+      - "gmod/**"
+      - "spec/test-vectors/**"
+      - ".github/workflows/ci-gmod.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Test and package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # GMod runs LuaJIT; stock Lua 5.1 with the test bit shim catches code
+      # that only works because of a LuaJIT extension.
+      - name: Install Lua
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends luajit lua5.1
+
+      - name: Test (LuaJIT)
+        working-directory: gmod
+        run: luajit tests/run.lua
+
+      - name: Test (Lua 5.1)
+        working-directory: gmod
+        run: lua5.1 tests/run.lua
+
+      - name: End-to-end test
+        working-directory: gmod
+        run: tests/e2e.sh luajit
+
+      - name: Package
+        working-directory: gmod
+        run: ./build.sh
+
+      - name: Upload addon zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ticket_tool_link-gmod
+          path: gmod/build/ticket_tool_link-gmod-*.zip
+          if-no-files-found: error

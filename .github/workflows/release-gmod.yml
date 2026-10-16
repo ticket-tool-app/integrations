@@ -1,0 +1,57 @@
+name: Release Garry's Mod
+
+on:
+  push:
+    tags: ["gmod-v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#gmod-v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "Tag $GITHUB_REF_NAME is not gmod-vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install Lua
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends luajit lua5.1
+
+      - name: Test
+        working-directory: gmod
+        run: |
+          luajit tests/run.lua
+          lua5.1 tests/run.lua
+          tests/e2e.sh luajit
+
+      - name: Package
+        working-directory: gmod
+        run: ./build.sh "${{ steps.version.outputs.version }}"
+
+      # Several plugins release from this repo, so GitHub's single "latest" badge
+      # would point at whichever shipped last; docs link to a filtered list instead.
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          prerelease=""
+          [[ "$VERSION" == *-* ]] && prerelease="--prerelease"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Ticket Tool Link for Garry's Mod $VERSION" \
+            --generate-notes \
+            --verify-tag \
+            --latest=false \
+            $prerelease \
+            "gmod/build/ticket_tool_link-gmod-$VERSION.zip" \
+            "gmod/build/ticket_tool_link-gmod-$VERSION.zip.sha256"
