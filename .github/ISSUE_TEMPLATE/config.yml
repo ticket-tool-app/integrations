@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setup help and general questions
+    url: https://ticket-tool.app/discord
+    about: The fastest way to get help. Ask in the support server before opening an issue.
+  - name: Documentation
+    url: https://ticket-tool.app/docs
+    about: Guides for game server plugins, lookups, linked accounts, and the rest of Ticket Tool.
+  - name: Bugs in Ticket Tool itself (bot, dashboard, API)
+    url: https://github.com/ticket-tool-app/community/issues
+    about: This repository is only for the open-source plugins and SDKs.
+  - name: Report a security vulnerability
+    url: https://github.com/ticket-tool-app/integrations/security/advisories/new
+    about: Report privately. Never disclose a vulnerability in a public issue.

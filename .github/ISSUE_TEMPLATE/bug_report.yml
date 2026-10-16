@@ -1,0 +1,98 @@
+name: Bug report
+description: A plugin or SDK in this repository is not working the way it should.
+title: "[Bug]: "
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is a setup question rather than a bug, ask in the
+        [support server](https://ticket-tool.app/discord) instead. It is faster.
+
+        Do not include your integration key, other secrets, or other people's
+        personal information in this issue.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which part?
+      options:
+        - Minecraft plugin (Ticket Tool Link)
+        - Java SDK
+        - Protocol spec or test vectors
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Plugin or SDK version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: server
+    attributes:
+      label: Server software and Minecraft version
+      description: Run `/version` on the server.
+      placeholder: "Paper 1.21.4 build 230 / Folia 1.20.6 / Spigot 1.21.1"
+    validations:
+      required: false
+
+  - type: input
+    id: ban-plugin
+    attributes:
+      label: Ban plugin
+      placeholder: "LiteBans 2.16 / AdvancedBan / LibertyBans / none"
+    validations:
+      required: false
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the behavior you saw.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Number the steps so we can follow the exact path you took.
+      placeholder: |
+        1. Create a Minecraft key and paste it into config.yml
+        2. Run /ticketlink reload
+        3. /ticketlink status says "Not connected"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server log and /ticketlink status output
+      description: Paste the relevant lines from `logs/latest.log`. The plugin never logs your key, but check before pasting.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I have searched the existing issues and this has not already been reported.
+          required: true
+        - label: This is not a security vulnerability. (Those go through [SECURITY.md](https://github.com/ticket-tool-app/integrations/blob/main/SECURITY.md).)
+          required: true
+        - label: I have not included my integration key or other people's personal information.
+          required: true
