@@ -1,0 +1,6 @@
+{
+	"title": "Ticket Tool Link",
+	"type": "servercontent",
+	"tags": ["build", "roleplay"],
+	"ignore": ["*.md", "*.zip"]
+}
