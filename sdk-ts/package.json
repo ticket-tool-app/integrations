@@ -1,0 +1,32 @@
+{
+  "name": "@ticket-tool/plugin-sdk",
+  "version": "0.1.0",
+  "description": "Client for the Ticket Tool game plugin protocol, version 1. No runtime dependencies.",
+  "license": "MIT",
+  "author": "JTF Labs Pty Ltd <noreply@ticket-tool.app>",
+  "homepage": "https://github.com/ticket-tool-app/integrations/tree/main/sdk-ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ticket-tool-app/integrations.git",
+    "directory": "sdk-ts"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke": "node scripts/smoke.cjs"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.9",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
