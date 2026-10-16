@@ -1,0 +1,44 @@
+# Messages players and admins see. Use & color codes. Leave a message empty ("") to not send it.
+# Placeholders in {braces} are filled in by the plugin.
+
+prefix: "&8[&9Ticket Tool&8] &r"
+
+link:
+  usage: "&7Type &f/ttlink <code>&7 with the code from your &fLinked accounts&7 page on the Ticket Tool dashboard."
+  players-only: "&cOnly players can link an account. Run /ttlink in game."
+  bad-format: "&cThat doesn't look like a link code. Codes look like &fABCD-EFGH&c."
+  cooldown: "&7Hang on a moment, you can try again in {seconds}s."
+  checking: "&7Checking your code..."
+  linked: "&aLinked to Discord user &f{username}&a. You're all set!"
+  linked-no-username: "&aYour Minecraft account is now linked to Discord. You're all set!"
+  relinked: "&aYou were already linked to Discord user &f{username}&a. Nothing else to do."
+  relinked-no-username: "&aYour Minecraft account was already linked to that Discord account. Nothing else to do."
+  invalid-code: "&cThat code is wrong or has expired. Make a new one on your Linked accounts page."
+  unknown-player: "&cOnly Java Edition accounts can be linked."
+  mojang-unavailable: "&eCouldn't reach Mojang. Try /ttlink again in a minute. Your code still works."
+  rate-limited: "&eLots of people are linking right now. Try again in a minute."
+  not-configured: "&cAccount linking isn't set up on this server yet. Let an admin know."
+  failed: "&cSomething went wrong while linking your account. Try again in a minute."
+
+admin:
+  usage: "&7Usage: &f/{label} status&7 or &f/{label} reload"
+  reloading: "&7Reloading config.yml and messages.yml..."
+  reloaded: "&aReloaded."
+  status:
+    header: "&fTicket Tool Link &7v{version}"
+    no-key: "&eNo key set. Paste a Minecraft key from the dashboard into config.yml, then run &f/ticketlink reload&e."
+    bad-key: "&c{problem}"
+    key: "&7Key: &f{key} &7({name})"
+    discord: "&7Discord server: &f{server}"
+    ban-provider: "&7Bans from: &f{provider}"
+    answered: "&7Lookups answered since start: &f{count}"
+    clock: "&7Clock corrected by &f{seconds}s&7 to match Ticket Tool. Check this server's time sync."
+    last-error: "&7Last problem ({ago} ago): &f{error}"
+    state:
+      starting: "&eConnecting to Ticket Tool..."
+      connected: "&aConnected to Ticket Tool."
+      reconnecting: "&eCan't reach Ticket Tool right now. Retrying automatically."
+      paused_plan: "&eThe Discord server's plan doesn't include game lookups. Checking again every hour."
+      stopped_invalid_key: "&cTicket Tool doesn't recognize this key. It may have been rotated or revoked: paste the current key and reload."
+      stopped_error: "&cStopped. See the last problem below."
+      stopped: "&7Not connected."

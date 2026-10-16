@@ -1,0 +1,30 @@
+# Ticket Tool Link
+# https://ticket-tool.app/docs/integrations/minecraft-plugin
+#
+# 1. On the Ticket Tool dashboard, open Automations > Connections > Game server plugins
+#    and create a Minecraft key. It is only shown once.
+# 2. Paste the whole key below (it starts with ttp_ and contains a dot).
+# 3. Run /ticketlink reload. The dashboard shows "Connected now" within a few seconds.
+#
+# Treat the key like a password: whoever has it can answer lookups for your Discord server.
+# The plugin never sends the key itself and never writes it to the log; only its public
+# id (ttp_ followed by 16 characters) appears there.
+key: ""
+
+# The name staff see for this server on the lookup card. On a network with one key per
+# backend, set it to the backend's name. Leave empty to use the key's name from the dashboard.
+server-name: ""
+
+# Which ban plugin to read: auto, litebans, advancedban, libertybans or vanilla.
+# auto uses the first one installed of LiteBans, AdvancedBan and LibertyBans, and otherwise
+# the server's own ban list (banned-players.json).
+ban-provider: auto
+
+# Seconds a player has to wait between /ttlink attempts.
+link-cooldown-seconds: 5
+
+# Where Ticket Tool lives. Leave this alone unless Ticket Tool support asks you to change it.
+api-url: "https://dash.ticket-tool.app"
+
+# Log extra detail for troubleshooting. The key is never logged.
+debug: false
