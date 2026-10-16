@@ -1,0 +1,8 @@
+{
+  "key": "",
+  "serverName": "",
+  "banProvider": "auto",
+  "apiUrl": "https://dash.ticket-tool.app",
+  "txAdminDb": "",
+  "debug": false
+}

@@ -1,0 +1,4 @@
+node_modules/
+build/
+ticket-tool-link/dist/
+ticket-tool-link/config.json
