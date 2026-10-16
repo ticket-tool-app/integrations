@@ -10,16 +10,16 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-0b0b0b" alt="MIT license"></a>
   <br>
   <a href="https://github.com/ticket-tool-app/integrations/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ticket-tool-app/integrations/ci.yml?branch=main&label=CI" alt="CI"></a>
-  <a href="https://github.com/ticket-tool-app/integrations/releases?q=minecraft"><img src="https://img.shields.io/github/v/release/ticket-tool-app/integrations?filter=minecraft-v*&label=release&color=444444" alt="Minecraft release"></a>
-  <a href="https://github.com/ticket-tool-app/integrations/releases?q=fivem"><img src="https://img.shields.io/github/v/release/ticket-tool-app/integrations?filter=fivem-v*&label=release&color=444444" alt="FiveM and RedM release"></a>
-  <a href="https://github.com/ticket-tool-app/integrations/releases?q=gmod"><img src="https://img.shields.io/github/v/release/ticket-tool-app/integrations?filter=gmod-v*&label=release&color=444444" alt="Garry's Mod release"></a>
+  <a href="https://github.com/ticket-tool-app/integrations/releases?q=minecraft"><img src="https://img.shields.io/github/v/release/ticket-tool-app/integrations?filter=minecraft-v*&label=Minecraft&color=444444" alt="Minecraft release"></a>
+  <a href="https://github.com/ticket-tool-app/integrations/releases?q=fivem"><img src="https://img.shields.io/github/v/release/ticket-tool-app/integrations?filter=fivem-v*&label=FiveM%20%2F%20RedM&color=444444" alt="FiveM and RedM release"></a>
+  <a href="https://github.com/ticket-tool-app/integrations/releases?q=gmod"><img src="https://img.shields.io/github/v/release/ticket-tool-app/integrations?filter=gmod-v*&label=Garry%27s%20Mod&color=444444" alt="Garry's Mod release"></a>
 </p>
 
 ---
 
 ## About
 
-A game plugin connects your game server to one Discord server. When someone opens a ticket, Ticket Tool asks the plugin about the opener's linked player and shows staff what it says: name, UUID, whether they're online, when they were last seen and any active ban. Minecraft players link their account by typing a short code in game; FiveM and RedM players are matched by their Discord account, and Garry's Mod players by the Steam account they linked to Discord.
+A game plugin connects your game server to one Discord server. When someone opens a ticket, Ticket Tool asks the plugin about the opener's linked player and shows staff what it says: name, UUID, whether they're online, when they were last seen and any active ban. Minecraft players link their account by typing a short code in game; FiveM and RedM players are matched by their Discord account, and Garry's Mod, Rust and CS2 players by the Steam account they linked to Discord.
 
 The plugin only makes outbound HTTPS requests. Ticket Tool never connects to your game server, its database or your ban plugin.
 
@@ -32,8 +32,11 @@ The plugin only makes outbound HTTPS requests. Ticket Tool never connects to you
 | [`minecraft/`](minecraft/README.md) | **Ticket Tool Link** for Paper, Folia and Spigot 1.20.6+ |
 | [`fivem/`](fivem/README.md) | **Ticket Tool Link** for FiveM and RedM, one resource for both |
 | [`gmod/`](gmod/README.md) | **Ticket Tool Link** for Garry's Mod, a pure Lua addon |
+| [`rust/`](rust/README.md) | **Ticket Tool Link** for Rust, a single-file Oxide and Carbon plugin |
+| [`cs2/`](cs2/README.md) | **Ticket Tool Link** for Counter-Strike 2 on CounterStrikeSharp |
 | [`sdk-java/`](sdk-java/README.md) | `ticket-tool-plugin-sdk`, a dependency-free Java 21 client for the protocol |
 | [`sdk-ts/`](sdk-ts/README.md) | `@ticket-tool/plugin-sdk`, a dependency-free Node client for the protocol |
+| [`sdk-dotnet/`](sdk-dotnet/README.md) | `TicketTool.PluginSdk`, a dependency-free .NET client for the protocol |
 | [`spec/`](spec/README.md) | The protocol spec and shared test vectors every SDK must pass |
 
 ## Quick start for server owners
@@ -46,6 +49,8 @@ The plugin only makes outbound HTTPS requests. Ticket Tool never connects to you
 | Minecraft | [`TicketToolLink-<version>.jar`](https://github.com/ticket-tool-app/integrations/releases?q=minecraft) | [minecraft/README.md](minecraft/README.md) |
 | FiveM and RedM | [`ticket-tool-link-fivem-<version>.zip`](https://github.com/ticket-tool-app/integrations/releases?q=fivem) | [fivem/README.md](fivem/README.md) |
 | Garry's Mod | [`ticket_tool_link-gmod-<version>.zip`](https://github.com/ticket-tool-app/integrations/releases?q=gmod) | [gmod/README.md](gmod/README.md) |
+| Rust (Oxide, Carbon) | [`TicketToolLink-rust-<version>.cs`](https://github.com/ticket-tool-app/integrations/releases?q=rust) | [rust/README.md](rust/README.md) |
+| Counter-Strike 2 | [`TicketToolLink-cs2-<version>.zip`](https://github.com/ticket-tool-app/integrations/releases?q=cs2) | [cs2/README.md](cs2/README.md) |
 
 Every release has a `.sha256` checksum next to it. What each plugin doesn't support yet is listed in its guide.
 
@@ -56,6 +61,7 @@ Every release has a `.sha256` checksum next to it. What each plugin doesn't supp
 | `minecraft/`, `sdk-java/` | Java 21 (Gradle comes with the wrapper) | `./gradlew build` |
 | `fivem/`, `sdk-ts/` | Node 20+ | `npm ci && npm test` in the folder |
 | `gmod/` | LuaJIT or Lua 5.1 | `luajit tests/run.lua` in `gmod/` |
+| `sdk-dotnet/`, `rust/`, `cs2/` | .NET 8 SDK | see each folder's README |
 
 ## Contributing
 
