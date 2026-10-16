@@ -1,0 +1,74 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      minecraft: ${{ steps.publish.outputs['minecraft--tag_name'] || steps.prepare.outputs['minecraft--tag_name'] }}
+      fivem: ${{ steps.publish.outputs['fivem--tag_name'] || steps.prepare.outputs['fivem--tag_name'] }}
+      gmod: ${{ steps.publish.outputs['gmod--tag_name'] || steps.prepare.outputs['gmod--tag_name'] }}
+      rust: ${{ steps.publish.outputs['rust--tag_name'] || steps.prepare.outputs['rust--tag_name'] }}
+      cs2: ${{ steps.publish.outputs['cs2--tag_name'] || steps.prepare.outputs['cs2--tag_name'] }}
+    steps:
+      - id: prepare
+        uses: googleapis/release-please-action@v4
+
+      # A merge made with GITHUB_TOKEN starts no new workflow run, so the
+      # release PR is merged here and release-please runs again to tag it.
+      - name: Merge the release PR
+        if: steps.prepare.outputs.pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ fromJSON(steps.prepare.outputs.pr).number }}
+        run: gh pr merge "$PR" --squash --repo "$GITHUB_REPOSITORY"
+
+      - id: publish
+        if: steps.prepare.outputs.pr
+        uses: googleapis/release-please-action@v4
+
+  minecraft:
+    needs: release-please
+    if: needs.release-please.outputs.minecraft
+    uses: ./.github/workflows/release-minecraft.yml
+    with:
+      tag: ${{ needs.release-please.outputs.minecraft }}
+
+  fivem:
+    needs: release-please
+    if: needs.release-please.outputs.fivem
+    uses: ./.github/workflows/release-fivem.yml
+    with:
+      tag: ${{ needs.release-please.outputs.fivem }}
+
+  gmod:
+    needs: release-please
+    if: needs.release-please.outputs.gmod
+    uses: ./.github/workflows/release-gmod.yml
+    with:
+      tag: ${{ needs.release-please.outputs.gmod }}
+
+  rust:
+    needs: release-please
+    if: needs.release-please.outputs.rust
+    uses: ./.github/workflows/release-rust.yml
+    with:
+      tag: ${{ needs.release-please.outputs.rust }}
+
+  cs2:
+    needs: release-please
+    if: needs.release-please.outputs.cs2
+    uses: ./.github/workflows/release-cs2.yml
+    with:
+      tag: ${{ needs.release-please.outputs.cs2 }}
