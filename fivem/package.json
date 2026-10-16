@@ -1,0 +1,19 @@
+{
+  "name": "ticket-tool-link-fivem",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ticket Tool Link resource for FiveM and RedM servers.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "package": "node scripts/build.mjs --package",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.9",
+    "esbuild": "0.25.9",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

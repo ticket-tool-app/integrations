@@ -1,0 +1,60 @@
+name: CI FiveM
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fivem/**"
+      - "sdk-ts/src/**"
+      - "sdk-ts/test/fake-server.ts"
+      - "spec/**"
+      - ".github/workflows/ci-fivem.yml"
+  pull_request:
+    paths:
+      - "fivem/**"
+      - "sdk-ts/src/**"
+      - "sdk-ts/test/fake-server.ts"
+      - "spec/**"
+      - ".github/workflows/ci-fivem.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fivem
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "16"
+
+      - name: Remember the Node 16 binary
+        run: echo "TTL_E2E_NODE=$(which node)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: fivem/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+
+      # The end-to-end test runs the bundled resource on Node 16, FXServer's default runtime.
+      - run: npm test
+
+      - name: Package
+        run: npm run package
+
+      - name: Upload resource zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ticket-tool-link-fivem
+          path: fivem/build/ticket-tool-link-fivem-*.zip
+          if-no-files-found: error
