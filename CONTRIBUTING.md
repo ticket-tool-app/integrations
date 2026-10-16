@@ -35,4 +35,6 @@ Keep them focused, include tests for SDK changes, and make sure the build and te
 
 ## Releases
 
-Push a tag `minecraft-vMAJOR.MINOR.PATCH` on `main` and the Release Minecraft workflow builds the plugin at that version and publishes `TicketToolLink-<version>.jar` with its SHA-256 checksum to GitHub Releases. A tag with a suffix such as `minecraft-v1.1.0-beta.1` publishes as a pre-release. FiveM/RedM, Garry's Mod, Rust and CS2 release the same way from `fivem-v*`, `gmod-v*`, `rust-v*` and `cs2-v*` tags. Each plugin has its own tag prefix, so one repo can release plugins independently.
+Releases are automatic. When a `feat:` or `fix:` commit lands on `main`, Release Please works out the next version for each plugin it touched, writes its changelog, merges its own release PR, tags it (`minecraft-v1.2.0`, `fivem-v…`, `gmod-v…`, `rust-v…`, `cs2-v…`) and the plugin's release workflow attaches the build and its SHA-256. `feat:` bumps the minor version, `fix:` the patch, and `feat!:` or a `BREAKING CHANGE:` footer the major. `docs:`, `ci:` and `chore:` commits don't release anything.
+
+To release by hand, push a tag such as `minecraft-v1.1.0-beta.1` on `main`; a version with a suffix publishes as a pre-release.

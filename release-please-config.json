@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "include-component-in-tag": true,
+  "include-v-in-tag": true,
+  "tag-separator": "-",
+  "separate-pull-requests": false,
+  "initial-version": "1.0.0",
+  "bootstrap-sha": "1debc437a784026902d6166eb5e6470b62b8a3be",
+  "packages": {
+    "minecraft": { "component": "minecraft" },
+    "fivem": { "component": "fivem" },
+    "gmod": { "component": "gmod" },
+    "rust": { "component": "rust" },
+    "cs2": { "component": "cs2" }
+  }
+}
