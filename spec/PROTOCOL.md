@@ -31,7 +31,7 @@ A game server plugin lets your own game server answer for one Discord server: wh
 
 - **Outbound only.** The plugin makes every connection. Ticket Tool never connects to your game server or to its database.
 - **One key, one server.** A key belongs to one Discord server and one plugin type. It can answer lookups and report account links for that server only. It can't read tickets or change settings.
-- **Signed both ways.** Every request is signed with a secret derived from the key, with a timestamp and a nonce. Every reply is signed too.
+- **Signed both ways.** Every request is signed with a secret derived from the key, with a timestamp and a nonce. Every successful reply is signed too; some errors are not (see [Unsigned errors](#unsigned-errors)).
 
 ### Why long-polling
 
@@ -64,7 +64,7 @@ Ticket Tool stores a SHA-256 hash of the key and the derived signing secret, enc
 
 ## Requests
 
-Base URL: `https://api.ticket-tool.app/api/plugin/v1`
+Base URL: `https://api.ticket-tool.app/api/plugin/v1`. `https://dash.ticket-tool.app/api/plugin/v1` serves the same endpoints, and is what the official plugin uses by default.
 
 Every endpoint takes `POST` with a JSON body (`{}` when there is nothing to send) and `Content-Type: application/json`. Bodies are limited to 32 KB.
 
@@ -78,6 +78,8 @@ Every endpoint takes `POST` with a JSON body (`{}` when there is nothing to send
 | `X-TT-Signature` | `v1=` followed by the lowercase hex HMAC described below                                 |
 | `X-TT-Protocol`  | `1`                                                                                      |
 | `X-TT-Plugin`    | Free text shown on the dashboard, e.g. `ticket-tool-minecraft/1.0.0 (Paper 1.21.1)`      |
+
+Ticket Tool shows the first 100 characters of `X-TT-Plugin` next to the key. `X-TT-Protocol` may be left out; when it is sent, it must be `1`.
 
 ### Signing a request
 
@@ -103,9 +105,12 @@ Then `X-TT-Signature` is `v1=` + lowercase hex `HMAC-SHA256(signingSecret, canon
 
 Ticket Tool rejects a request when:
 
-- the timestamp is more than **300 seconds** from its clock (the error includes `serverTime` so you can correct for skew)
-- the nonce was already used with this key in the last **10 minutes**
-- the signature doesn't match the body, endpoint, method, timestamp and nonce
+- a signing header is missing (`missing_headers`) or the nonce has the wrong format (`bad_nonce`)
+- the timestamp is more than **300 seconds** from its clock (`stale_timestamp`)
+- the signature doesn't match the body, endpoint, method, timestamp and nonce (`bad_signature`)
+- the nonce was already used with this key in the last **10 minutes** (`replayed`)
+
+Every signature failure (`missing_headers`, `bad_nonce`, `stale_timestamp` and `bad_signature`) includes `serverTime`, Ticket Tool's current Unix time, so you can correct for clock skew.
 
 ### Worked example
 
@@ -133,7 +138,11 @@ RESPONSE
 
 Accept a reply only when the nonce is the one you sent, the timestamp is within 300 seconds, and the signature matches. Because the nonce is yours, a recorded reply can't be passed off as the answer to a different request. For the example above, a reply body `{"ok":true,"requests":[]}` at timestamp `1760529601` is signed `v1=57e67ded8456ec7d4a98676cfbd5d346e3e0d5d6a1e74f9685fb00496cc3837d`.
 
-Errors returned before the key is recognized (an unknown key id, rate limits) are not signed.
+### Unsigned errors
+
+Errors from the checks Ticket Tool runs on every request, before the endpoint itself handles it, come back **unsigned**: `invalid_key`, `missing_headers`, `bad_nonce`, `stale_timestamp`, `bad_signature`, `replayed`, `unsupported_protocol`, `too_large`, `rate_limited` (both the per-address and the per-key limit), `plan_not_entitled`, `503 unavailable` and `500 internal`. Errors from the endpoint itself, after those checks pass, are signed like any other reply, so the same code (`unavailable`, for example) can arrive either way.
+
+A plugin must accept an unsigned reply only as an error (`ok: false` with a status of 400 or above), and act on it as the [Errors](#errors) table says. It must never treat an unsigned reply as a success.
 
 ## Endpoints
 
@@ -160,7 +169,7 @@ Send on start-up and after a config reload.
 }
 ```
 
-`plugin.type` must match the key's plugin type, or the reply is `400 wrong_plugin_type`. A plugin that speaks a newer protocol reads `protocol` here and uses that version.
+`plugin.type` must match the key's plugin type, or the reply is `400 wrong_plugin_type` with the key's type in `expected`. A plugin that speaks a newer protocol reads `protocol` here and uses that version.
 
 ### POST /poll
 
@@ -184,7 +193,8 @@ Body `{}`. Ticket Tool holds the request open for up to `poll.waitSeconds` (25) 
 - Poll again straight away after every reply, and answer requests on another thread so the next poll isn't held up.
 - Use a read timeout of at least 35 seconds.
 - On a network error or a `5xx`, back off (1, 2, 4 … up to 60 seconds, with jitter).
-- A request must be answered before `expiresAt`, usually 4 to 5 seconds after it was queued. Skip any that have expired.
+- A request must be answered before `expiresAt`. That is usually 4 to 5 seconds after it was queued, and can be as short as about 1.5 seconds when a support flow checks bans while a member waits. Skip any that have expired.
+- A ticket's profile lookup and its ban lookup arrive as **separate requests**, one with `include: ["profile"]` and one with `include: ["bans"]`. Answer each on its own. Read `include` rather than assuming it, since a future request may ask for both.
 - The plugin counts as **connected** while a poll is open and for 40 seconds after.
 - Ignore request `type`s and `include` parts you don't know.
 
@@ -259,7 +269,7 @@ A player typed `/ttlink <code>` in game.
 { "ok": true, "result": "linked", "discord": { "username": "alex" }, "player": { "name": "Notch" } }
 ```
 
-`result` is `relinked` when the player was already linked to that Discord account. Codes are 8 characters, single-use and valid for 10 minutes.
+`result` is `relinked` when the player was already linked to that Discord account. Codes are 8 characters, single-use and valid for 10 minutes. Ticket Tool ignores case, spaces and dashes in the code, so `ABCD-EFGH` and `abcdefgh` are the same.
 
 Ticket Tool looks the UUID up with Mojang before linking, and `player.name` in the reply is the name Mojang holds; the `name` you send is only used to read the request. Only real Java Edition accounts can link, so offline-mode UUIDs and Geyser/Floodgate UUIDs are refused.
 
@@ -268,8 +278,10 @@ Ticket Tool looks the UUID up with Mojang before linking, and `player.name` in t
 | 404    | `invalid_code`   | Unknown, used or expired code                                                                |
 | 422    | `unknown_player` | Mojang has no account with this UUID. The code is used up                                    |
 | 503    | `unavailable`    | Mojang didn't answer. `retryable` is `true` and the code still works: retry in a few seconds |
+| 429    | `rate_limited`   | More than 20 `/link` calls this minute with this key. The code is not used up                |
+| 400    | `unsupported`    | The key isn't a Minecraft key, so it can't link accounts                                     |
 
-Any other failed attempt uses the code up.
+These replies are signed. Any other failed attempt uses the code up.
 
 The plugin must take the UUID and name from the player who ran the command, never from command arguments, and should only accept the command from players (not the console). The new link is shared with this Discord server only; the member can share it with others from their Linked accounts page.
 
@@ -284,20 +296,21 @@ Body `{}`. Send when the plugin shuts down so lookups show "unavailable" straigh
 | Status | `error`                  | What to do                                                                 |
 | ------ | ------------------------ | -------------------------------------------------------------------------- |
 | 400    | `unsupported_protocol`   | The `X-TT-Protocol` version isn't served here. Read `protocol` and use it  |
-| 400    | `invalid_body`           | Fix the message; `issues` says which fields                                |
+| 400    | `invalid_body`           | Fix the message. On `/respond`, `issues` says which fields                 |
 | 401    | `invalid_key`            | The key is unknown, revoked or rotated. Stop and tell the admin            |
 | 401    | `missing_headers`, `bad_nonce`, `bad_signature` | A signing bug. Check against the worked example      |
 | 401    | `stale_timestamp`        | Clock skew. Adjust by `serverTime` and retry once                          |
 | 401    | `replayed`               | A nonce was reused. Generate a fresh one per request                       |
 | 403    | `plan_not_entitled`      | The Discord server's plan no longer includes game lookups. Retry hourly    |
 | 413    | `too_large`              | Body over 32 KB                                                            |
-| 429    | `rate_limited`           | Back off for a minute                                                      |
+| 429    | `rate_limited`           | Back off for a minute. Unsigned, except the signed `/link` limit           |
 | 429    | `too_many_polls`         | Three polls with this key are already open. Keep one poll at a time        |
+| 500    | `internal`               | A fault on Ticket Tool's side. Retry with backoff                          |
 | 503    | `unavailable`            | Retry with backoff                                                         |
 
 ## Limits
 
-- 240 requests a minute per key, and 20 `/link` calls a minute per key. Only correctly signed requests count against a key's limit
+- 240 requests a minute per key, and 20 `/link` calls a minute per key. Only correctly signed requests count against a key's limit. Each address also has a limit of its own, checked before the key is looked up
 - 3 open polls at a time per key
 - Up to 20 requests in one poll reply
 - Up to 10 keys per Discord server. A lookup asks at most 5 connected plugins and merges their answers: the backend where the player is online wins the profile, and a ban on any backend counts
@@ -366,8 +379,8 @@ platform already ships (Gson is bundled with Bukkit/Paper).
   - Offline players: `Bukkit.getOfflinePlayer(uuid)` gives `getLastPlayed()` /
     `getFirstPlayed()` (epoch ms, 0 when unknown). On Paper prefer
     `getLastSeen()`.
-  - Give each answer a budget of about 3 s from receipt; `expiresAt` is
-    usually 4 to 5 s after queueing.
+  - Give each answer a budget of about 3 s from receipt, capped by `expiresAt`,
+    which is usually 4 to 5 s after queueing and can be about 1.5 s.
 - **Ban providers** (soft-depend on all three; detect in `onEnable`, prefer in
   this order, report the found ones in `/hello` `banProviders`):
   - **LiteBans:** `litebans.api.Database.get().prepareStatement(...)` against
