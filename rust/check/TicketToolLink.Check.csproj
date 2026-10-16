@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Compile check for the single-file plugin. The real Oxide, Carbon and Rust
+    assemblies can't be redistributed, so Stubs/ declares just the members the
+    plugin uses, with the real signatures. LangVersion 7.3 keeps the file within
+    what Oxide's compiler accepts. Build with -p:Carbon=true for the Carbon path.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants Condition="'$(Carbon)' == 'true'">$(DefineConstants);CARBON</DefineConstants>
+    <!-- Unused private fields stay in the stubs on purpose. -->
+    <NoWarn>$(NoWarn);CS0169;CS0649;CS0414</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../dist/TicketToolLink.cs" />
+    <Compile Include="Stubs/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Oxide and Carbon both ship Newtonsoft.Json to plugins. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>
