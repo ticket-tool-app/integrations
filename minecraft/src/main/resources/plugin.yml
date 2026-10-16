@@ -1,0 +1,28 @@
+name: TicketToolLink
+version: "${version}"
+main: app.tickettool.minecraft.TicketToolLinkPlugin
+api-version: "1.20"
+folia-supported: true
+description: Links this server to Ticket Tool so staff see a player's profile and bans on Discord tickets, and players can link their account in game.
+website: https://ticket-tool.app/docs/integrations/minecraft-plugin
+authors: [Ticket Tool]
+softdepend: [LiteBans, AdvancedBan, LibertyBans]
+
+commands:
+  ttlink:
+    description: Link your Minecraft account to Discord with a code from Ticket Tool.
+    usage: /ttlink <code>
+    permission: tickettool.link
+  ticketlink:
+    description: Show the Ticket Tool connection status or reload the config.
+    usage: /ticketlink <status|reload>
+    aliases: [tickettool]
+    permission: tickettool.admin
+
+permissions:
+  tickettool.link:
+    description: Use /ttlink to link a Minecraft account to Discord.
+    default: true
+  tickettool.admin:
+    description: Use /ticketlink status and /ticketlink reload.
+    default: op
