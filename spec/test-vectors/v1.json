@@ -1,0 +1,30 @@
+{
+  "protocol": 1,
+  "source": "Matches packages/shared/src/game-plugins/__tests__/signing.test.ts on the Ticket Tool server.",
+  "key": "ttp_0123456789abcdef.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "keyId": "0123456789abcdef",
+  "signingSecret": "20998da3e0f449ee48f630226afec7b5991112ac4233721a30ba008bb50d8a9c",
+  "bodyHashes": [
+    { "body": "{}", "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a" }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "endpoint": "/poll",
+      "body": "{}",
+      "timestamp": 1760529600,
+      "nonce": "abcdefghijklmnop",
+      "canonical": "v1\nPOST\n/poll\n1760529600\nabcdefghijklmnop\n44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "signature": "v1=d71627ae221c55861c68c1e5d230d7faec74072f75d952ccaa58a2b67b608d3d"
+    }
+  ],
+  "replies": [
+    {
+      "endpoint": "/poll",
+      "body": "{\"ok\":true,\"requests\":[]}",
+      "timestamp": 1760529601,
+      "nonce": "abcdefghijklmnop",
+      "signature": "v1=57e67ded8456ec7d4a98676cfbd5d346e3e0d5d6a1e74f9685fb00496cc3837d"
+    }
+  ]
+}
