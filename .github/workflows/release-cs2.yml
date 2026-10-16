@@ -1,0 +1,62 @@
+name: Release CS2
+
+on:
+  push:
+    tags: ["cs2-v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Read version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#cs2-v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "Tag $GITHUB_REF_NAME is not cs2-vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        run: |
+          dotnet test sdk-dotnet/tests/TicketTool.PluginSdk.Tests
+          dotnet test cs2/tests/TicketToolLink.Tests
+
+      - name: Build
+        run: cs2/package.sh "${{ steps.version.outputs.version }}"
+
+      - name: Checksum
+        working-directory: cs2/dist
+        run: sha256sum "TicketToolLink-cs2-${{ steps.version.outputs.version }}.zip" > "TicketToolLink-cs2-${{ steps.version.outputs.version }}.zip.sha256"
+
+      # Several plugins release from this repo, so GitHub's single "latest" badge
+      # would point at whichever shipped last; docs link to a filtered list instead.
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          prerelease=""
+          [[ "$VERSION" == *-* ]] && prerelease="--prerelease"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Ticket Tool Link for Counter-Strike 2 $VERSION" \
+            --generate-notes \
+            --verify-tag \
+            --latest=false \
+            $prerelease \
+            "cs2/dist/TicketToolLink-cs2-$VERSION.zip" \
+            "cs2/dist/TicketToolLink-cs2-$VERSION.zip.sha256"

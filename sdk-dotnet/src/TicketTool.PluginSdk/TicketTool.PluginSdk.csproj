@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+    <!-- The Rust plugin inlines these sources and Oxide compiles them on the game
+         server with its own compiler, so the SDK sticks to C# 7.3. -->
+    <LangVersion>7.3</LangVersion>
+    <RootNamespace>TicketTool.PluginSdk</RootNamespace>
+    <AssemblyName>TicketTool.PluginSdk</AssemblyName>
+    <Version>1.0.0</Version>
+    <Authors>Ticket Tool</Authors>
+    <Company>JTF Labs Pty Ltd</Company>
+    <Description>Client for the Ticket Tool game plugin protocol v1.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="TicketTool.PluginSdk.Tests" />
+  </ItemGroup>
+</Project>
