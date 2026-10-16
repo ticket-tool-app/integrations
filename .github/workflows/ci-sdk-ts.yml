@@ -1,0 +1,49 @@
+name: CI TypeScript SDK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdk-ts/**"
+      - "spec/**"
+      - ".github/workflows/ci-sdk-ts.yml"
+  pull_request:
+    paths:
+      - "sdk-ts/**"
+      - "spec/**"
+      - ".github/workflows/ci-sdk-ts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk-ts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: sdk-ts/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      # The package promises Node 16+, and FXServer still ships 16 by default.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "16"
+
+      - name: Smoke test on Node 16
+        run: node scripts/smoke.cjs
+
+      # Not published to npm yet. Publishing needs an NPM_TOKEN repository
+      # secret and a release workflow running `npm publish --provenance --access public`.
