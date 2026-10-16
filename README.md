@@ -37,7 +37,7 @@ The plugin only makes outbound HTTPS requests. Ticket Tool never connects to you
 ## Quick start for server owners
 
 1. On the Ticket Tool dashboard, go to **Automations → Connections → Game server plugins** and create a Minecraft key. Copy it: it's only shown once.
-2. Drop `TicketToolLink-<version>.jar` into your server's `plugins` folder and start the server once.
+2. Download `TicketToolLink-<version>.jar` from the [latest release](https://github.com/ticket-tool-app/integrations/releases/latest), drop it into your server's `plugins` folder and start the server once.
 3. Paste the key into `plugins/TicketToolLink/config.yml`, then run `/ticketlink reload`.
 
 The full guide, including ban plugins and networks, is in [minecraft/README.md](minecraft/README.md).

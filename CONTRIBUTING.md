@@ -30,3 +30,7 @@ Ban plugins are called through reflection (see `minecraft/.../bans/`), so the bu
 ## Pull requests
 
 Keep them focused, include tests for SDK changes, and make sure `./gradlew build` passes. CI runs the same command.
+
+## Releases
+
+Push a tag `vMAJOR.MINOR.PATCH` on `main` and the Release workflow builds the plugin at that version and publishes `TicketToolLink-<version>.jar` with its SHA-256 checksum to GitHub Releases. A tag with a suffix such as `v1.1.0-beta.1` publishes as a pre-release, so the latest-release link always points at a stable build.

@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Read version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "Tag $GITHUB_REF_NAME is not vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: ./gradlew build --no-daemon -PreleaseVersion=${{ steps.version.outputs.version }}
+
+      - name: Checksum
+        working-directory: minecraft/build/libs
+        run: sha256sum "TicketToolLink-${{ steps.version.outputs.version }}.jar" > "TicketToolLink-${{ steps.version.outputs.version }}.jar.sha256"
+
+      # A tag with a suffix (v1.1.0-beta.1) publishes as a pre-release, so
+      # releases/latest only ever points at a stable build.
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          prerelease=""
+          [[ "$VERSION" == *-* ]] && prerelease="--prerelease"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Ticket Tool Link $VERSION" \
+            --generate-notes \
+            --verify-tag \
+            $prerelease \
+            "minecraft/build/libs/TicketToolLink-$VERSION.jar" \
+            "minecraft/build/libs/TicketToolLink-$VERSION.jar.sha256"
