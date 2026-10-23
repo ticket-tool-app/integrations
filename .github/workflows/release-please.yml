@@ -24,7 +24,7 @@ jobs:
       cs2: ${{ steps.publish.outputs['cs2--tag_name'] || steps.prepare.outputs['cs2--tag_name'] }}
     steps:
       - id: prepare
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
 
       # A merge made with GITHUB_TOKEN starts no new workflow run, so the
       # release PR is merged here and release-please runs again to tag it.
@@ -37,7 +37,7 @@ jobs:
 
       - id: publish
         if: steps.prepare.outputs.pr
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
 
   minecraft:
     needs: release-please
