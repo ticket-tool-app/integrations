@@ -8,7 +8,7 @@ Report it privately rather than opening a public issue or pull request. Either:
 
 - Use the **Report a vulnerability** button on this repository's
   [Security tab](https://github.com/ticket-tool-app/integrations/security), or
-- Email [support@ticket-tool.app](mailto:support@ticket-tool.app) with
+- Email [security@ticket-tool.app](mailto:security@ticket-tool.app) with
   `SECURITY` in the subject.
 
 Tell us what you found, how to reproduce it, and the version of the plugin or
