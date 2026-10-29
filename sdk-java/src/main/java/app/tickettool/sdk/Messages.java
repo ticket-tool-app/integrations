@@ -19,7 +19,16 @@ final class Messages {
 
     private Messages() {}
 
+    static final int MAX_ACTION_MESSAGE = 500;
+    static final int MAX_REPORT_MESSAGE = 1000;
+    static final String REPORT_EVENT = "player.report";
+
     static Map<String, Object> hello(PluginInfo info, List<String> banProviders) {
+        return hello(info, banProviders, List.of(), false);
+    }
+
+    static Map<String, Object> hello(PluginInfo info, List<String> banProviders, List<String> actions,
+            boolean reports) {
         Map<String, Object> plugin = new LinkedHashMap<>();
         plugin.put("type", info.type());
         plugin.put("version", info.version());
@@ -31,6 +40,13 @@ final class Messages {
         body.put("plugin", plugin);
         if (banProviders != null && !banProviders.isEmpty()) {
             body.put("banProviders", banProviders.stream().limit(8).map(p -> Text.clip(p, 32)).toList());
+        }
+        List<String> on = ActionRequest.ORDER.stream().filter(k -> actions != null && actions.contains(k)).toList();
+        if (!on.isEmpty()) {
+            body.put("actions", on);
+        }
+        if (reports) {
+            body.put("events", List.of(REPORT_EVENT));
         }
         return body;
     }
@@ -77,6 +93,77 @@ final class Messages {
                     Set.copyOf(include)));
         }
         return out;
+    }
+
+    /** {@code player.action} requests; malformed entries and unknown kinds are skipped. */
+    static List<ActionRequest> pollActions(Map<String, Object> body) {
+        List<ActionRequest> out = new ArrayList<>();
+        for (Object item : JsonFields.list(body, "requests")) {
+            if (!(item instanceof Map<?, ?>)) {
+                continue;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> req = (Map<String, Object>) item;
+            if (!ActionRequest.TYPE_PLAYER_ACTION.equals(JsonFields.string(req, "type"))) {
+                continue;
+            }
+            String id = JsonFields.string(req, "id");
+            Instant expiresAt = instant(JsonFields.string(req, "expiresAt"));
+            Map<String, Object> action = JsonFields.object(req, "action");
+            String kind = JsonFields.string(action, "kind");
+            if (id == null || expiresAt == null || kind == null || !ActionRequest.KINDS.contains(kind)) {
+                continue;
+            }
+            Map<String, Object> player = JsonFields.object(req, "player");
+            String message = ActionRequest.UNBAN.equals(kind) ? null
+                    : Text.clip(Text.emptyToNull(JsonFields.string(action, "message")), MAX_ACTION_MESSAGE);
+            String actor = Text.clip(Text.emptyToNull(JsonFields.string(JsonFields.object(req, "actor"), "name")), 64);
+            out.add(new ActionRequest(id, expiresAt, uuid(JsonFields.string(player, "uuid")),
+                    JsonFields.string(player, "name"), kind, message, actor == null ? "Ticket Tool" : actor));
+        }
+        return out;
+    }
+
+    static Map<String, Object> respondAction(ActionRequest request, ActionResult result) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("requestId", request.id());
+        if (result instanceof ActionResult.Failure f) {
+            body.put("ok", false);
+            body.put("error", f.error());
+            if (f.message() != null) {
+                body.put("message", f.message());
+            }
+        } else {
+            body.put("ok", true);
+        }
+        return body;
+    }
+
+    static Map<String, Object> report(UUID uuid, String name, String message, String targetName, String server) {
+        Map<String, Object> player = new LinkedHashMap<>();
+        player.put("uuid", uuid.toString());
+        player.put("name", Text.clip(name, 64));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("type", REPORT_EVENT);
+        body.put("player", player);
+        body.put("message", Text.clip(message.trim(), MAX_REPORT_MESSAGE));
+        String target = Text.emptyToNull(targetName);
+        body.put("target", target == null ? null : Map.of("name", Text.clip(target, 64)));
+        body.put("server", Text.clip(Text.emptyToNull(server), 64));
+        return body;
+    }
+
+    static ReportResult reportReply(Map<String, Object> body) {
+        return "opened".equals(JsonFields.string(body, "result"))
+                ? new ReportResult(ReportResult.Outcome.OPENED, null)
+                : new ReportResult(ReportResult.Outcome.IGNORED, null);
+    }
+
+    static ReportResult reportError(ApiException e) {
+        String error = e.error() == null ? "http_" + e.status() : e.error();
+        return ReportResult.failed("rate_limited".equals(error)
+                ? ReportResult.Outcome.RATE_LIMITED
+                : ReportResult.Outcome.FAILED, error);
     }
 
     static Map<String, Object> respond(LookupRequest request, LookupResult result) {

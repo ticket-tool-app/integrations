@@ -321,4 +321,69 @@ class TicketToolClientTest {
                 TicketToolClient.apiBase("https://api.ticket-tool.app/api/plugin/v1/").toString());
         assertEquals("http://localhost:3001/api/plugin/v1", TicketToolClient.apiBase("http://localhost:3001").toString());
     }
+
+    @Test
+    void listsEnabledActionsAndReportsInHello() throws Exception {
+        client = builder(profileHandler())
+                .actionHandler(r -> CompletableFuture.completedFuture(ActionResult.done()))
+                .actions(() -> List.of("kick", "message"))
+                .reportsEnabled(() -> true)
+                .build();
+        client.start();
+        await(() -> !server.calls("/hello").isEmpty(), "hello");
+        Map<String, Object> hello = server.calls("/hello").get(0).body();
+        assertEquals(List.of("message", "kick"), hello.get("actions"));
+        assertEquals(List.of("player.report"), hello.get("events"));
+    }
+
+    @Test
+    void carriesOutAnEnabledActionAndRefusesOthers() throws Exception {
+        List<ActionRequest> seen = new CopyOnWriteArrayList<>();
+        client = builder(profileHandler())
+                .actionHandler(r -> {
+                    seen.add(r);
+                    return CompletableFuture.completedFuture(ActionResult.done());
+                })
+                .actions(() -> List.of("kick"))
+                .build();
+        client.start();
+        await(() -> !server.calls("/poll").isEmpty(), "first poll");
+
+        server.queueLookup(FakeTicketTool.action("a1", UUID_DASHED, 9000, "kick", "Read the rules"));
+        FakeTicketTool.Received done = server.responses.poll(5, TimeUnit.SECONDS);
+        assertNotNull(done, "no /respond");
+        assertEquals(Map.of("requestId", "a1", "ok", true), done.body());
+        assertEquals("Read the rules", seen.get(0).message());
+        assertEquals("alex", seen.get(0).actorName());
+        assertEquals(UUID.fromString(UUID_DASHED), seen.get(0).playerUuid());
+
+        server.queueLookup(FakeTicketTool.action("a2", UUID_DASHED, 9000, "unban", "ignored"));
+        FakeTicketTool.Received refused = server.responses.poll(5, TimeUnit.SECONDS);
+        assertNotNull(refused, "no /respond");
+        assertEquals("not_allowed", refused.body().get("error"));
+        assertEquals(1, seen.size());
+    }
+
+    @Test
+    void sendsReportsOnlyWhenOn() throws Exception {
+        boolean[] on = {false};
+        client = builder(profileHandler()).reportsEnabled(() -> on[0]).build();
+        client.start();
+        await(() -> !server.calls("/poll").isEmpty(), "first poll");
+        UUID player = UUID.fromString(UUID_DASHED);
+        assertEquals(ReportResult.Outcome.NOT_ENABLED,
+                client.report(player, "Notch", "help", null, null).get(5, TimeUnit.SECONDS).outcome());
+        on[0] = true;
+        server.override("/event", r -> Canned.ok(Map.of("ok", true, "result", "opened")));
+        ReportResult opened = client.report(player, "Notch", " griefing ", "Bob", "survival-1").get(5, TimeUnit.SECONDS);
+        assertTrue(opened.success());
+        Map<String, Object> body = server.calls("/event").get(0).body();
+        assertEquals("player.report", body.get("type"));
+        assertEquals("griefing", body.get("message"));
+        assertEquals(Map.of("name", "Bob"), body.get("target"));
+        assertEquals("survival-1", body.get("server"));
+        server.override("/event", r -> Canned.error(429, "rate_limited"));
+        assertEquals(ReportResult.Outcome.RATE_LIMITED,
+                client.report(player, "Notch", "x", null, null).get(5, TimeUnit.SECONDS).outcome());
+    }
 }
