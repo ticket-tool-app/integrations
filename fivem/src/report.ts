@@ -80,7 +80,7 @@ function replyFor(result: ReportResult, who: string, warn: (m: string) => void):
     case "not_enabled":
       return "Reports aren't turned on for this server.";
     default:
-      if (result.error === "plan_not_entitled") warn("Reports need the Pro plan on the Discord server.");
+      if (result.error === "plan_not_entitled") warn("Reports need the Community or Pro plan on the Discord server.");
       else if (result.error !== "not_running") warn(`Sending ${who}'s report failed: ${result.error}`);
       return "Your report couldn't be sent. Try again in a minute.";
   }

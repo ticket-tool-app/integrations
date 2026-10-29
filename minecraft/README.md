@@ -60,7 +60,7 @@ All player-facing text is in `messages.yml`, with `&` color codes and `{placehol
 
 ## Staff actions and in-game reports
 
-Staff can act on a player from Discord: from **Run an app action** on a ticket, a flow, or an automation rule. Every action is off until you turn it on, and Ticket Tool only offers the ones you did. Actions and reports need the Pro plan.
+Staff can act on a player from Discord: from **Run an app action** on a ticket, a flow, or an automation rule. Every action is off until you turn it on, and Ticket Tool only offers the ones you did. Actions need the Pro plan; reports work on Community and Pro.
 
 | Action | What happens in game |
 | --- | --- |

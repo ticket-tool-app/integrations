@@ -364,7 +364,7 @@ namespace Oxide.Plugins
                 if (result.Outcome == ReportOutcome.Failed)
                 {
                     _lastReport.Remove(player.Id);
-                    if (result.Error == "plan_not_entitled") PrintWarning("{0}", "Reports need the Pro plan on the Discord server.");
+                    if (result.Error == "plan_not_entitled") PrintWarning("{0}", "Reports need the Community or Pro plan on the Discord server.");
                     else if (result.Error != "not_running") PrintWarning("{0}", "Sending " + name + "'s report failed: " + result.Error);
                 }
                 if (player.IsConnected) player.Reply(ReportReply(result.Outcome));

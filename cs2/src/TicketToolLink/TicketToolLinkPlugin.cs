@@ -367,7 +367,7 @@ public sealed class TicketToolLinkPlugin : BasePlugin, IPluginConfig<PluginConfi
             if (result.Outcome == ReportOutcome.Failed)
             {
                 _lastReport.TryRemove(sid, out _);
-                if (result.Error == "plan_not_entitled") Logger.LogWarning("Reports need the Pro plan on the Discord server.");
+                if (result.Error == "plan_not_entitled") Logger.LogWarning("Reports need the Community or Pro plan on the Discord server.");
                 else if (result.Error != "not_running")
                     Logger.LogWarning("Sending {Name}'s report failed: {Error}", name, result.Error);
             }

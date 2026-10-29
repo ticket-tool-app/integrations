@@ -122,7 +122,7 @@ function M.onSay(deps, ply, text)
 			if result.outcome == "failed" then
 				deps.cooldowns[sid] = nil
 				if result.error == "plan_not_entitled" then
-					deps.log.warn("Reports need the Pro plan on the Discord server.")
+					deps.log.warn("Reports need the Community or Pro plan on the Discord server.")
 				elseif result.error ~= "not_running" then
 					deps.log.warn("Sending " .. name .. "'s report failed: " .. tostring(result.error))
 				end

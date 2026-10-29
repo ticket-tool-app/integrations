@@ -406,7 +406,7 @@ The protocol version is a whole number, sent in `X-TT-Protocol` and `/hello`. Wi
 
 Game server plugins use the same plan feature as lookups and ban lookup, so they work on Community and Pro. If a server's plan changes, the plugin's requests are refused with `plan_not_entitled` until it is back on a plan that includes them.
 
-Player actions and reports are sent from automations and staff actions, which need Pro. On Community the plugin still connects and answers lookups, but receives no actions, and its `/event` calls get `result: "ignored"`.
+Player actions are sent from automations and staff actions, which need Pro: on Community the plugin still connects and answers lookups but receives no actions. Reports work on Community and Pro, the same as lookups.
 
 ---
 

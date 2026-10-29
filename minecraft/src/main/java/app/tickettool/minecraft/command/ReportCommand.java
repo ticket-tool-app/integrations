@@ -76,7 +76,7 @@ public final class ReportCommand implements TabExecutor {
                     return;
                 }
                 if ("plan_not_entitled".equals(result.error())) {
-                    plugin.getLogger().warning("Reports need the Pro plan on the Discord server.");
+                    plugin.getLogger().warning("Reports need the Community or Pro plan on the Discord server.");
                 } else {
                     plugin.getLogger().warning("Sending " + player.getName() + "'s report failed: " + result.error());
                 }
