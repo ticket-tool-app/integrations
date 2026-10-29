@@ -156,7 +156,8 @@ describe("TicketToolClient", () => {
     fake.override("/poll", () => (failures-- > 0 ? unsigned(503, "unavailable") : ok({ ok: true, requests: [] })));
     const c = client();
     c.start();
-    await until(() => failures < 0 && c.status().state === "connected", "recovery");
+    // "connected" is set before the poll that succeeds, so wait for the log line.
+    await until(() => logs.includes("info Reconnected to Ticket Tool"), "recovery");
     expect(sleeps.slice(0, 3).every((ms, i) => ms >= 500 * 2 ** i && ms <= 1000 * 2 ** i)).toBe(true);
     expect(logs.filter((l) => l.startsWith("warn")).length).toBe(1);
     expect(logs).toContain("info Reconnected to Ticket Tool");
