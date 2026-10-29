@@ -44,6 +44,7 @@ public final class TicketToolClient {
 
     static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     static final Duration CALL_TIMEOUT = Duration.ofSeconds(10);
+    static final Duration ACTION_BUDGET = Duration.ofSeconds(8);
     static final Duration GOODBYE_TIMEOUT = Duration.ofSeconds(2);
     static final Duration PLAN_RETRY = Duration.ofHours(1);
     static final Duration RATE_LIMIT_WAIT = Duration.ofMinutes(1);
@@ -54,6 +55,9 @@ public final class TicketToolClient {
     private final PluginInfo plugin;
     private final RequestHandler handler;
     private final Supplier<List<String>> banProviders;
+    private final ActionHandler actionHandler;
+    private final Supplier<List<String>> actions;
+    private final java.util.function.BooleanSupplier reportsEnabled;
     private final SdkLogger log;
     private final InstantSource clock;
     private final Sleeper sleeper;
@@ -69,6 +73,7 @@ public final class TicketToolClient {
     private volatile boolean running;
     private volatile boolean closed;
     private volatile boolean everConnected;
+    private volatile boolean needHello = true;
 
     private volatile ClientStatus.State state = ClientStatus.State.STOPPED;
     private volatile String lastError;
@@ -83,6 +88,9 @@ public final class TicketToolClient {
         this.plugin = Objects.requireNonNull(b.plugin, "plugin");
         this.handler = Objects.requireNonNull(b.handler, "handler");
         this.banProviders = b.banProviders;
+        this.actionHandler = b.actionHandler;
+        this.actions = b.actions;
+        this.reportsEnabled = b.reportsEnabled;
         this.log = b.logger;
         this.clock = b.clock;
         this.sleeper = b.sleeper;
@@ -225,13 +233,63 @@ public final class TicketToolClient {
         }
     }
 
+    /**
+     * Sends an in-game report. Pass the UUID and name of the player who ran the
+     * command, never values from its arguments. Never completes exceptionally.
+     *
+     * @param targetName the player the report is about, when the command names one; may be null
+     * @param server     backend or world name; may be null
+     */
+    public CompletableFuture<ReportResult> report(UUID playerUuid, String playerName, String message,
+            String targetName, String server) {
+        Objects.requireNonNull(playerUuid, "playerUuid");
+        Objects.requireNonNull(playerName, "playerName");
+        Objects.requireNonNull(message, "message");
+        if (closed) {
+            return CompletableFuture.completedFuture(ReportResult.failed(ReportResult.Outcome.FAILED, "not_running"));
+        }
+        if (!reportsEnabled.getAsBoolean()) {
+            return CompletableFuture.completedFuture(
+                    ReportResult.failed(ReportResult.Outcome.NOT_ENABLED, "not_enabled"));
+        }
+        if (message.isBlank()) {
+            return CompletableFuture.completedFuture(ReportResult.failed(ReportResult.Outcome.FAILED, "empty_message"));
+        }
+        try {
+            return CompletableFuture.supplyAsync(() -> {
+                try {
+                    return Messages.reportReply(transport.call("/event",
+                            Messages.report(playerUuid, playerName, message, targetName, server), CALL_TIMEOUT));
+                } catch (ApiException e) {
+                    return Messages.reportError(e);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return ReportResult.failed(ReportResult.Outcome.FAILED, "interrupted");
+                } catch (IOException | RuntimeException e) {
+                    log.warn("Couldn't reach Ticket Tool to send " + playerName + "'s report: " + rootMessage(e), null);
+                    return ReportResult.failed(ReportResult.Outcome.FAILED, "network");
+                }
+            }, workers);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            return CompletableFuture.completedFuture(ReportResult.failed(ReportResult.Outcome.FAILED, "not_running"));
+        }
+    }
+
+    /** Sends {@code /hello} again so the dashboard sees changed actions or reports, e.g. after a reload. */
+    public void refreshHello() {
+        needHello = true;
+    }
+
     private void runLoop() {
-        boolean needHello = true;
+        needHello = true;
         while (running) {
             try {
                 if (needHello) {
                     HelloReply reply = Messages.helloReply(transport.call("/hello",
-                            Messages.hello(plugin, banProviders.get()), CALL_TIMEOUT));
+                            Messages.hello(plugin, banProviders.get(),
+                                    actionHandler == null ? List.of() : actions.get(),
+                                    reportsEnabled.getAsBoolean()),
+                            CALL_TIMEOUT));
                     hello = reply;
                     needHello = false;
                     everConnected = true;
@@ -246,13 +304,18 @@ public final class TicketToolClient {
                 for (LookupRequest request : Messages.pollRequests(body)) {
                     dispatch(request);
                 }
+                for (ActionRequest action : Messages.pollActions(body)) {
+                    dispatchAction(action);
+                }
             } catch (InterruptedException e) {
                 break;
             } catch (ApiException e) {
                 if (!running) {
                     break;
                 }
-                needHello |= handleApiError(e);
+                if (handleApiError(e)) {
+                    needHello = true;
+                }
             } catch (HttpTimeoutException e) {
                 if (!running) {
                     break;
@@ -304,6 +367,9 @@ public final class TicketToolClient {
     }
 
     private void dispatch(LookupRequest request) {
+        if (ActionRequest.TYPE_PLAYER_ACTION.equals(request.type())) {
+            return;
+        }
         if (!LookupRequest.TYPE_PLAYER_LOOKUP.equals(request.type())) {
             log.debug("Ignoring request type " + request.type());
             return;
@@ -355,6 +421,75 @@ public final class TicketToolClient {
             }
             respond(request, out);
         }, workers);
+    }
+
+    private void dispatchAction(ActionRequest request) {
+        Instant received = serverNow();
+        if (!request.expiresAt().isAfter(received)) {
+            log.debug("Dropping expired action " + request.id());
+            return;
+        }
+        workers.execute(() -> act(request, received));
+    }
+
+    private void act(ActionRequest request, Instant received) {
+        if (actionHandler == null || !actions.get().contains(request.kind())) {
+            log.info("Refused a " + request.kind() + " from " + request.actorName()
+                    + ": that action is off in the plugin's config");
+            respondAction(request, ActionResult.failure(ActionResult.NOT_ALLOWED));
+            return;
+        }
+        if (request.playerUuid() == null) {
+            respondAction(request, ActionResult.failure(ActionResult.UNKNOWN_PLAYER));
+            return;
+        }
+        Instant budgetEnd = received.plus(ACTION_BUDGET);
+        Instant deadline = budgetEnd.isBefore(request.expiresAt()) ? budgetEnd : request.expiresAt();
+        long remaining = Math.max(1, Duration.between(received, deadline).toMillis());
+        CompletableFuture<ActionResult> future;
+        try {
+            future = actionHandler.handle(request);
+            if (future == null) {
+                future = CompletableFuture.completedFuture(null);
+            }
+        } catch (RuntimeException e) {
+            future = CompletableFuture.failedFuture(e);
+        }
+        future.orTimeout(remaining, TimeUnit.MILLISECONDS).whenCompleteAsync((result, error) -> {
+            ActionResult out = result;
+            if (error != null) {
+                Throwable cause = error instanceof CompletionException && error.getCause() != null
+                        ? error.getCause()
+                        : error;
+                if (cause instanceof TimeoutException) {
+                    out = ActionResult.failure(ActionResult.ERROR, "The game server took too long to carry it out");
+                } else {
+                    log.warn("Action " + request.id() + " failed", cause);
+                    out = ActionResult.failure(ActionResult.ERROR, "The plugin hit an error carrying out this action");
+                }
+            } else if (out == null) {
+                out = ActionResult.failure(ActionResult.ERROR, "The plugin had no answer");
+            }
+            // Unlike a lookup, a late action already happened in game, so staff still hear about it.
+            respondAction(request, out);
+        }, workers);
+    }
+
+    private void respondAction(ActionRequest request, ActionResult result) {
+        try {
+            transport.call("/respond", Messages.respondAction(request, result), CALL_TIMEOUT);
+            answered.incrementAndGet();
+        } catch (ApiException e) {
+            if ("unknown_request".equals(e.error())) {
+                log.debug("Action " + request.id() + " expired before the answer arrived");
+            } else {
+                log.warn("Ticket Tool refused the result of action " + request.id() + ": " + e.getMessage(), null);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (IOException | RuntimeException e) {
+            log.warn("Couldn't send the result of action " + request.id() + ": " + rootMessage(e), null);
+        }
     }
 
     private void respond(LookupRequest request, LookupResult result) {
@@ -436,6 +571,9 @@ public final class TicketToolClient {
         private PluginInfo plugin;
         private RequestHandler handler;
         private Supplier<List<String>> banProviders = List::of;
+        private ActionHandler actionHandler;
+        private Supplier<List<String>> actions = List::of;
+        private java.util.function.BooleanSupplier reportsEnabled = () -> false;
         private SdkLogger logger = SdkLogger.NONE;
         private InstantSource clock = InstantSource.system();
         private Sleeper sleeper = Sleeper.SYSTEM;
@@ -471,6 +609,27 @@ public final class TicketToolClient {
         /** Read at each {@code /hello}, e.g. {@code ["litebans"]}. */
         public Builder banProviders(Supplier<List<String>> banProviders) {
             this.banProviders = Objects.requireNonNull(banProviders);
+            return this;
+        }
+
+        /** Carries out {@code player.action} requests. Without it every action is answered {@code not_allowed}. */
+        public Builder actionHandler(ActionHandler actionHandler) {
+            this.actionHandler = actionHandler;
+            return this;
+        }
+
+        /**
+         * The actions the server owner turned on, read at each {@code /hello} and
+         * checked for every request; anything else is answered {@code not_allowed}.
+         */
+        public Builder actions(Supplier<List<String>> actions) {
+            this.actions = Objects.requireNonNull(actions);
+            return this;
+        }
+
+        /** Whether in-game reports are on, read at each {@code /hello} and before each report. */
+        public Builder reportsEnabled(java.util.function.BooleanSupplier reportsEnabled) {
+            this.reportsEnabled = Objects.requireNonNull(reportsEnabled);
             return this;
         }
 

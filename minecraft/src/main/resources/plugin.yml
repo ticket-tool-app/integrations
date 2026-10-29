@@ -18,10 +18,18 @@ commands:
     usage: /ticketlink <status|reload>
     aliases: [tickettool]
     permission: tickettool.admin
+  ttreport:
+    description: Report a player or a problem to the server's staff on Discord.
+    usage: /report [player] <message>
+    aliases: [report]
+    permission: tickettool.report
 
 permissions:
   tickettool.link:
     description: Use /ttlink to link a Minecraft account to Discord.
+    default: true
+  tickettool.report:
+    description: Use /report to send a report to the server's staff on Discord.
     default: true
   tickettool.admin:
     description: Use /ticketlink status and /ticketlink reload.

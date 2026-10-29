@@ -37,6 +37,7 @@ Ticket Tool sends the SteamID64 of the Steam account the ticket opener linked. T
 | --- | --- | --- |
 | `ticket_tool_link status` | server console, RCON, superadmins | Connection state, key id, Discord server, ban sources, last problem |
 | `ticket_tool_link reload` | server console, RCON, superadmins | Re-reads the settings and reconnects |
+| `!report [player] <message>` in chat | everyone, when `reports` is on | Sends a report to the staff team on Discord (`/report` works too) |
 
 ## Configuration
 
@@ -49,6 +50,10 @@ Ticket Tool sends the SteamID64 of the Steam account the ticket opener linked. T
   "ban-provider": "auto",
   "api-url": "https://dash.ticket-tool.app",
   "keep-awake": true,
+  "actions": [],
+  "reports": false,
+  "report-command": "report",
+  "report-cooldown": 60,
   "debug": false
 }
 ```
@@ -60,6 +65,10 @@ Ticket Tool sends the SteamID64 of the Steam account the ticket opener linked. T
 | `ban-provider` | `ticket_tool_ban_provider` | `auto` | `auto`, `ulx`, `sam` or `server` |
 | `api-url` | `ticket_tool_api_url` | `https://dash.ticket-tool.app` | Only change this for testing |
 | `keep-awake` | `ticket_tool_keep_awake` | `true` | Sets `sv_hibernate_think 1` (see below) |
+| `actions` | `ticket_tool_actions` | none | Staff actions to allow: any of `message`, `warn`, `kick`, `unban` (a list, or comma separated in the convar) |
+| `reports` | `ticket_tool_reports` | `false` | Turns on the in-game report command |
+| `report-command` | `ticket_tool_report_command` | `report` | Chat command for reports, typed as `!report` or `/report` |
+| `report-cooldown` | `ticket_tool_report_cooldown` | `60` | Seconds between reports per player |
 | `debug` | `ticket_tool_debug` | `false` | More detail in the console |
 
 A convar that is set wins over `config.json`, so use one or the other. `ticket_tool_key` is a protected convar: its value is never sent to players or shown by the console. Run `ticket_tool_link reload` after changing either.
@@ -67,6 +76,19 @@ A convar that is set wins over `config.json`, so use one or the other. `ticket_t
 ### Empty servers
 
 An empty dedicated server hibernates, and while it does no Lua runs, so it can't answer lookups. Tickets are often about players who aren't online, so by default the addon sets `sv_hibernate_think 1` to keep the server awake. Set `keep-awake` to `false` if you'd rather it hibernate; lookups then only work while someone is playing.
+
+## Staff actions and in-game reports
+
+Staff can act on a player from Discord: from **Run an app action** on a ticket, a flow, or an automation rule. Every action is off until you turn it on, and Ticket Tool only offers the ones you did. Actions need the Pro plan; reports work on Community and Pro.
+
+| Action | What happens in game |
+| --- | --- |
+| `message` | The player gets a chat message from the staff member |
+| `warn` | The player gets a warning in chat and in the middle of the screen |
+| `kick` | The player is kicked with the reason staff typed |
+| `unban` | The ban is lifted where it was found: `ULib.unban` for ULX, `sam.player.unban` for SAM, or `removeid` and `writeid` for the server list |
+
+With `reports` on, `!report [player] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When a player sends a report in game** can open a ticket. The first word counts as the reported player only when it's the exact name of someone online. The command is kept out of public chat, the reporter is always the player who typed it, and each player can send one report every `report-cooldown` seconds.
 
 ## Ban sources
 

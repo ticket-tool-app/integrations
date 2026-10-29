@@ -37,7 +37,7 @@ function t.fresh()
 	return TicketToolLink
 end
 
-local files = { "crypto", "json", "common", "identity", "client", "main", "e2e" }
+local files = { "crypto", "json", "common", "identity", "client", "actions", "main", "e2e" }
 local pick = {}
 for i = 1, #(arg or {}) do pick[arg[i]] = true end
 

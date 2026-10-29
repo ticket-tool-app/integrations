@@ -82,7 +82,7 @@ function stub.install()
 	VERSIONSTR = "2024.06.28"
 	BRANCH = "x86-64"
 	FCVAR_ARCHIVE, FCVAR_PROTECTED, FCVAR_UNLOGGED, FCVAR_DONTRECORD = 128, 32, 2048, 131072
-	HUD_PRINTCONSOLE = 2
+	HUD_PRINTCONSOLE, HUD_PRINTCENTER = 2, 4
 	ULib, sam, UTime = nil, nil, nil
 
 	function include(path) return dofile(stub.LUA .. path) end
@@ -133,7 +133,15 @@ function stub.install()
 	GetConVar = convar
 	stub.convars.sv_hibernate_think = { value = "0" }
 
-	player = { GetHumans = function() return stub.players end }
+	player = {
+		GetHumans = function() return stub.players end,
+		GetBySteamID64 = function(sid)
+			for _, p in ipairs(stub.players) do
+				if p.sid == sid then return p end
+			end
+			return false
+		end,
+	}
 
 	HTTP = function(req) return stub.http(req) end
 
@@ -234,6 +242,8 @@ function stub.player(opts)
 	function p:IsBot() return self.bot end
 	function p:IsSuperAdmin() return self.superadmin end
 	function p:PrintMessage(_, text) self.printed[#self.printed + 1] = text end
+	function p:ChatPrint(text) self.printed[#self.printed + 1] = text end
+	function p:Kick(reason) self.kicked = reason end
 	if opts.utime then
 		function p:GetUTimeTotalTime() return opts.utime end
 	end

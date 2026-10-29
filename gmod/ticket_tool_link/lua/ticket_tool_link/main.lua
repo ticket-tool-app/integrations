@@ -11,6 +11,7 @@ local config = TTL.load("config")
 local players = TTL.load("players")
 local bans = TTL.load("bans")
 local lookup = TTL.load("lookup")
+local actions = TTL.load("actions")
 
 local M = {}
 
@@ -20,7 +21,7 @@ local PREFIX_COLOR = Color(88, 101, 242)
 local TEXT_COLOR = Color(230, 230, 230)
 local WARN_COLOR = Color(255, 196, 0)
 
-local settings = { debug = false }
+local settings = { debug = false, actions = {}, reports = false, reportCommand = "report", reportCooldown = 60 }
 
 local log = {
 	info = function(msg) MsgC(PREFIX_COLOR, "[Ticket Tool] ", TEXT_COLOR, msg, "\n") end,
@@ -128,6 +129,9 @@ function M.reload()
 		userAgent = "ticket-tool-gmod/" .. TTL.VERSION .. " (" .. platform() .. ")",
 		handler = lookup.newHandler({ banChain = banChain, serverName = serverName, now = now }),
 		banProviders = banChain,
+		actionHandler = actions.newHandler({ banChain = banChain, log = log }),
+		actions = function() return settings.actions end,
+		reportsEnabled = function() return settings.reports end,
 		log = log,
 		http = HTTP,
 		after = timer.Simple,
@@ -166,6 +170,8 @@ function M.statusLines()
 	end
 	lines[#lines + 1] = "Server name on cards: " .. tostring(serverName() or "(none)")
 	lines[#lines + 1] = "Ban sources: " .. table.concat(state.chain, ", ")
+	lines[#lines + 1] = "Actions from Discord: " .. (#settings.actions > 0 and table.concat(settings.actions, ", ") or "none")
+	lines[#lines + 1] = "In-game reports: " .. (settings.reports and ("on (!" .. settings.reportCommand .. ")") or "off")
 	lines[#lines + 1] = "Lookups answered: " .. s.answered
 	if s.offset ~= 0 then lines[#lines + 1] = "Clock offset: " .. s.offset .. " s" end
 	if s.lastError then
@@ -208,6 +214,16 @@ function M.init()
 
 	hook.Add("PlayerInitialSpawn", "TicketToolLink", function(ply) players.record(ply, os.time()) end)
 	hook.Add("PlayerDisconnected", "TicketToolLink", function(ply) players.record(ply, os.time()) end)
+	local reportDeps = {
+		settings = function() return settings end,
+		client = function() return state.client end,
+		serverName = function() return settings.serverName ~= "" and settings.serverName or nil end,
+		log = log,
+		cooldowns = {},
+	}
+	hook.Add("PlayerSay", "TicketToolLink", function(ply, text)
+		if actions.onSay(reportDeps, ply, text) then return "" end
+	end)
 	hook.Add("ShutDown", "TicketToolLink", function() if TTL.shutdown then TTL.shutdown() end end)
 	concommand.Add("ticket_tool_link", command, nil, "Ticket Tool Link: status | reload")
 

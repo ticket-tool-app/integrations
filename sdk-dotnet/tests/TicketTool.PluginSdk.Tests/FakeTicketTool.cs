@@ -72,6 +72,18 @@ internal sealed class FakeTicketTool : IDisposable
         ["include"] = include.Cast<object>().ToList(),
     };
 
+    public static Dictionary<string, object?> Action(string id, string steamId, int expiresInMillis, string kind,
+        string? message) => new()
+    {
+        ["id"] = id,
+        ["type"] = "player.action",
+        ["expiresAt"] = DateTimeOffset.UtcNow.AddMilliseconds(expiresInMillis).ToString("o"),
+        ["player"] = new Dictionary<string, object?>
+            { ["uuid"] = null, ["steamId"] = steamId, ["discordId"] = null, ["name"] = "Josh" },
+        ["action"] = new Dictionary<string, object?> { ["kind"] = kind, ["message"] = message },
+        ["actor"] = new Dictionary<string, object?> { ["name"] = "mod.alex" },
+    };
+
     private static int FreePort()
     {
         var l = new TcpListener(IPAddress.Loopback, 0);
@@ -167,6 +179,7 @@ internal sealed class FakeTicketTool : IDisposable
                 }),
                 "/poll" => Poll(),
                 "/respond" => Respond(r),
+                "/event" => Canned.Ok(new Dictionary<string, object> { ["ok"] = true, ["result"] = "opened" }),
                 "/goodbye" => Canned.Ok(new Dictionary<string, object> { ["ok"] = true }),
                 _ => Canned.Error(404, "not_found", signed: false),
             });

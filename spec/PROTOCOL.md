@@ -154,9 +154,13 @@ Send on start-up and after a config reload.
 {
   "protocol": 1,
   "plugin": { "type": "minecraft", "version": "1.0.0", "platform": "Paper 1.21.1" },
-  "banProviders": ["litebans"]
+  "banProviders": ["litebans"],
+  "actions": ["message", "kick"],
+  "events": ["player.report"]
 }
 ```
+
+`actions` and `events` list what the server owner has turned on in the plugin's config (see [Player actions](#player-actions) and [POST /event](#post-event)). Leave them out, or send empty lists, when nothing is on.
 
 ```json
 {
@@ -170,6 +174,8 @@ Send on start-up and after a config reload.
 ```
 
 `plugin.type` must match the key's plugin type, or the reply is `400 wrong_plugin_type` with the key's type in `expected`. A plugin that speaks a newer protocol reads `protocol` here and uses that version.
+
+Send `/hello` again after a config reload, so the dashboard shows the actions and events that are on now.
 
 ### POST /poll
 
@@ -196,6 +202,7 @@ Body `{}`. Ticket Tool holds the request open for up to `poll.waitSeconds` (25) 
 - A request must be answered before `expiresAt`. That is usually 4 to 5 seconds after it was queued, and can be as short as about 1.5 seconds when a support flow checks bans while a member waits. Skip any that have expired.
 - A ticket's profile lookup and its ban lookup arrive as **separate requests**, one with `include: ["profile"]` and one with `include: ["bans"]`. Answer each on its own. Read `include` rather than assuming it, since a future request may ask for both.
 - The plugin counts as **connected** while a poll is open and for 40 seconds after.
+- A request's `type` is `player.lookup` (above) or `player.action` (see [Player actions](#player-actions)).
 - Ignore request `type`s and `include` parts you don't know.
 
 ### POST /respond
@@ -257,6 +264,82 @@ When the plugin can't answer, send `ok: false` with an error code:
 
 Ticket Tool replies `{"ok": true}`, or `410 unknown_request` when the request expired, was already answered, or was never sent to this key. Send only what staff should see: reasons appear on the private staff card. IP addresses are not part of the protocol, and fields it doesn't define are dropped.
 
+### Player actions
+
+Staff can ask the plugin to act on a player in game. Actions arrive through `/poll` like lookups, with `type: "player.action"`:
+
+```json
+{
+  "id": "2c4f8a10-6b1e-4d3a-9f0e-7a8b9c0d1e2f",
+  "type": "player.action",
+  "expiresAt": "2026-10-15T12:00:10.000Z",
+  "player": { "uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5", "name": "Notch" },
+  "action": { "kind": "kick", "message": "Please read the rules before rejoining." },
+  "actor": { "name": "alex" }
+}
+```
+
+| `action.kind` | What the plugin does                               | Player must be online |
+| ------------- | -------------------------------------------------- | --------------------- |
+| `message`     | Shows `message` to the player in chat              | Yes                   |
+| `warn`        | Shows `message` to the player as a staff warning   | Yes                   |
+| `kick`        | Kicks the player, with `message` as the reason     | Yes                   |
+| `unban`       | Lifts the player's active ban                      | No                    |
+
+- `player` has the same shape as a lookup's, and the plugin reads the identity for its type.
+- `message` is up to 500 characters of plain text, or `null`. `unban` never has one. Show it as text; never run it as a command.
+- `actor.name` is the Discord username of the staff member who asked, or `Ticket Tool` when an automation did. Use it in the in-game text and the server log.
+- **Every action is off until the server owner turns it on** in the plugin's config. Answer `not_allowed` for an action that is off, and list the ones that are on in `/hello` `actions`.
+- Actions expire like lookups, usually 10 seconds after they are queued. Skip expired ones: an action carried out late would surprise staff.
+
+Answer with `/respond`: `{ "requestId": "…", "ok": true }` once the action is done, or `ok: false` with one of these errors:
+
+| `error`          | Meaning                                                                         |
+| ---------------- | ------------------------------------------------------------------------------- |
+| `player_offline` | `message`, `warn` or `kick` for a player who isn't online on this server        |
+| `not_banned`     | `unban` for a player with no active ban                                         |
+| `not_allowed`    | The server owner hasn't turned this action on                                   |
+| `unknown_player` | The player has never joined                                                     |
+| `unsupported`    | This plugin can't do the action here, for example `unban` with no ban plugin    |
+| `error`          | Anything else; add a short `message` for the server's admins                    |
+
+On a network of several backends, every connected plugin for the server is asked, and the action counts as done when any one of them answers `ok: true`.
+
+### POST /event
+
+A player did something in game that the Discord server wants to hear about. Version 1 has one event, `player.report`: a player ran the report command (`/report` by default) with a message.
+
+```json
+{
+  "type": "player.report",
+  "player": { "uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5", "name": "Notch" },
+  "message": "Someone is griefing spawn",
+  "target": { "name": "Griefer123" },
+  "server": "survival-1"
+}
+```
+
+| Field     | Type             | Notes                                                                                                                       |
+| --------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `type`    | string           | `player.report`                                                                                                             |
+| `player`  | object           | Who sent it: `name`, plus `uuid` for Minecraft, `steamId` for Garry's Mod, Rust and CS2, or `discordId` for FiveM           |
+| `message` | string           | 1 to 1,000 characters                                                                                                       |
+| `target`  | object or `null` | The player the report is about, when the command names one: `name`, plus the same identity field when the plugin knows it   |
+| `server`  | string or `null` | Backend or world, on a proxy network                                                                                        |
+
+```json
+{ "ok": true, "result": "opened" }
+```
+
+Ticket Tool opens a ticket when the Discord server has an automation rule for game server reports. `result` is `opened`, or `ignored` when no rule took the report; tell the player it couldn't be sent. The ticket is opened as the player's linked Discord account when they have one, and otherwise as the bot, with a note naming the player.
+
+| Status | `error`        | Meaning                                                  |
+| ------ | -------------- | -------------------------------------------------------- |
+| 400    | `invalid_body` | Fix the message. `issues` says which fields              |
+| 429    | `rate_limited` | More than 10 `/event` calls this minute with this key    |
+
+Take `player` from the player who ran the command, never from command arguments, and accept the command only from players. Cool down per player (one report every 60 seconds) on top of the server-side limit. Like actions, reports are off until the server owner turns them on; list `player.report` in `/hello` `events` when they are.
+
 ### POST /link
 
 A player typed `/ttlink <code>` in game.
@@ -303,14 +386,14 @@ Body `{}`. Send when the plugin shuts down so lookups show "unavailable" straigh
 | 401    | `replayed`               | A nonce was reused. Generate a fresh one per request                       |
 | 403    | `plan_not_entitled`      | The Discord server's plan no longer includes game lookups. Retry hourly    |
 | 413    | `too_large`              | Body over 32 KB                                                            |
-| 429    | `rate_limited`           | Back off for a minute. Unsigned, except the signed `/link` limit           |
+| 429    | `rate_limited`           | Back off for a minute. Unsigned, except the signed `/link` and `/event` limits |
 | 429    | `too_many_polls`         | Three polls with this key are already open. Keep one poll at a time        |
 | 500    | `internal`               | A fault on Ticket Tool's side. Retry with backoff                          |
 | 503    | `unavailable`            | Retry with backoff                                                         |
 
 ## Limits
 
-- 240 requests a minute per key, and 20 `/link` calls a minute per key. Only correctly signed requests count against a key's limit. Each address also has a limit of its own, checked before the key is looked up
+- 240 requests a minute per key, 20 `/link` calls and 10 `/event` calls a minute per key. Only correctly signed requests count against a key's limit. Each address also has a limit of its own, checked before the key is looked up
 - 3 open polls at a time per key
 - Up to 20 requests in one poll reply
 - Up to 10 keys per Discord server. A lookup asks at most 5 connected plugins and merges their answers: the backend where the player is online wins the profile, and a ban on any backend counts
@@ -322,6 +405,8 @@ The protocol version is a whole number, sent in `X-TT-Protocol` and `/hello`. Wi
 ## Plans
 
 Game server plugins use the same plan feature as lookups and ban lookup, so they work on Community and Pro. If a server's plan changes, the plugin's requests are refused with `plan_not_entitled` until it is back on a plan that includes them.
+
+Player actions are sent from automations and staff actions, which need Pro: on Community the plugin still connects and answers lookups but receives no actions. Reports work on Community and Pro, the same as lookups.
 
 ---
 
@@ -533,4 +618,7 @@ A plugin is ready to list when it:
 - [ ] Sends no IP addresses, chat logs or anything beyond the documented fields.
 - [ ] Runs `/ttlink` for players only, with uuid and name from the player object, and a per-player cooldown.
 - [ ] Ignores unknown fields, request types and `include` parts.
+- [ ] Carries out `player.action` only for actions the owner turned on, on the main or region thread, and answers `not_allowed`, `player_offline` or `not_banned` instead of guessing.
+- [ ] Shows staff messages and kick reasons as plain text, never as a command or with color codes applied.
+- [ ] Sends `/event` only for players who ran the report command, with the player taken from the command's sender, and a per-player cooldown.
 - [ ] Opens no inbound port and makes no connection except to the configured base URL.

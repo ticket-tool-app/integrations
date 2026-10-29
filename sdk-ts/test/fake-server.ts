@@ -124,6 +124,17 @@ export class FakeTicketTool {
     };
   }
 
+  static action(id: string, player: Json, expiresInMs: number, kind: string, message: string | null = null): Json {
+    return {
+      id,
+      type: "player.action",
+      expiresAt: new Date(Date.now() + expiresInMs).toISOString(),
+      player: { uuid: null, steamId: null, discordId: null, name: null, ...player },
+      action: { kind, message },
+      actor: { name: "alex" },
+    };
+  }
+
   async #handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);

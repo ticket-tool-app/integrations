@@ -1,9 +1,11 @@
 package app.tickettool.minecraft;
 
+import app.tickettool.minecraft.action.PlayerActions;
 import app.tickettool.minecraft.bans.BanProvider;
 import app.tickettool.minecraft.bans.BanProviders;
 import app.tickettool.minecraft.command.AdminCommand;
 import app.tickettool.minecraft.command.LinkCommand;
+import app.tickettool.minecraft.command.ReportCommand;
 import app.tickettool.minecraft.lookup.LookupHandler;
 import app.tickettool.minecraft.lookup.ProfileReader;
 import app.tickettool.minecraft.platform.Platform;
@@ -43,6 +45,7 @@ public final class TicketToolLinkPlugin extends JavaPlugin {
         loadFiles();
         register("ttlink", new LinkCommand(this));
         register("ticketlink", new AdminCommand(this));
+        register("ttreport", new ReportCommand(this));
 
         if (!Bukkit.getOnlineMode()) {
             getLogger().warning("online-mode is off. Only real Java Edition accounts can link, so /ttlink works "
@@ -137,6 +140,9 @@ public final class TicketToolLinkPlugin extends JavaPlugin {
                         .banProviders(this::reportedBanProviders)
                         .handler(new LookupHandler(new ProfileReader(scheduler, this::serverNameForProfile),
                                 () -> bans.active(), getLogger()))
+                        .actionHandler(new PlayerActions(scheduler, () -> messages, () -> bans.active(), getLogger()))
+                        .actions(() -> settings.actions())
+                        .reportsEnabled(() -> settings.reportsEnabled())
                         .logger(sdkLogger())
                         .build();
             } catch (IllegalArgumentException e) {
@@ -230,6 +236,24 @@ public final class TicketToolLinkPlugin extends JavaPlugin {
         BanProviders.Choice c = bans;
         BanProvider p = c == null ? null : c.active();
         return p == null ? "?" : p.displayName();
+    }
+
+    public boolean reportsEnabled() {
+        return settings.reportsEnabled();
+    }
+
+    public int reportCooldownSeconds() {
+        return settings.reportCooldownSeconds();
+    }
+
+    /** The configured backend name for reports; null lets Ticket Tool use the key's name. */
+    public String serverName() {
+        return settings.serverName();
+    }
+
+    /** Actions turned on in config.yml, for status output. */
+    public java.util.List<String> enabledActions() {
+        return settings.actions();
     }
 
     public int linkCooldownSeconds() {

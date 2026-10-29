@@ -5,6 +5,8 @@ using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Config;
 using CounterStrikeSharp.API.Modules.Entities;
+using CounterStrikeSharp.API.Modules.Utils;
+using CounterStrikeSharp.API.ValveConstants.Protobuf;
 using Microsoft.Extensions.Logging;
 using TicketTool.PluginSdk;
 
@@ -32,10 +34,21 @@ public sealed class TicketToolLinkPlugin : BasePlugin, IPluginConfig<PluginConfi
     private SimpleAdminBans? _simpleAdmin;
     private string? _simpleAdminNote;
     private int _simpleAdminFailures;
+    private List<string> _actions = new();
+    private string _reportCommand = "report";
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, DateTime> _lastReport = new();
 
     public void OnConfigParsed(PluginConfig config)
     {
         Config = config;
+    }
+
+    // Re-read on every (re)start; problems are logged, never fatal.
+    private void ApplyActionSettings()
+    {
+        var problems = new List<string>();
+        _actions = GameText.EnabledActions(Config.Actions, problems);
+        foreach (string p in problems) Logger.LogWarning("{Problem}", p);
     }
 
     public override void Load(bool hotReload)
@@ -63,6 +76,17 @@ public sealed class TicketToolLinkPlugin : BasePlugin, IPluginConfig<PluginConfi
 
         if (hotReload)
             foreach (CCSPlayerController p in Utilities.GetPlayers()) MarkSeen(p);
+
+        // Registered once: a renamed command takes effect when the plugin is reloaded.
+        string command = (Config.ReportCommand ?? "").Trim().TrimStart('!', '/').ToLowerInvariant();
+        if (command.StartsWith("css_", StringComparison.Ordinal)) command = command[4..];
+        if (!GameText.IsCommandName(command))
+        {
+            Logger.LogWarning("report-command \"{Command}\" isn't a valid command name; using report", Config.ReportCommand);
+            command = "report";
+        }
+        _reportCommand = command;
+        AddCommand("css_" + command, "Report a player or a problem to the server's staff on Discord", OnReportCommand);
         StartClient();
     }
 
@@ -83,6 +107,7 @@ public sealed class TicketToolLinkPlugin : BasePlugin, IPluginConfig<PluginConfi
     {
         _setupProblem = null;
         SetUpSimpleAdmin();
+        ApplyActionSettings();
         if (string.IsNullOrWhiteSpace(Config.Key))
         {
             _setupProblem = "No key set. Paste the key from the Ticket Tool dashboard into "
@@ -101,6 +126,9 @@ public sealed class TicketToolLinkPlugin : BasePlugin, IPluginConfig<PluginConfi
                     ? new[] { SimpleAdminBans.Provider, NativeBanList.Provider }
                     : new[] { NativeBanList.Provider },
                 Handler = HandleLookupAsync,
+                ActionHandler = HandleActionAsync,
+                Actions = () => _actions,
+                ReportsEnabled = () => Config.Reports,
                 Logger = new CssLogger(Logger, Config.Debug),
             });
         }
@@ -229,6 +257,128 @@ public sealed class TicketToolLinkPlugin : BasePlugin, IPluginConfig<PluginConfi
         return simpleAdmin ?? BanInfo.NotBanned(NativeBanList.Provider);
     }
 
+    // Called on a pool thread. Unban checks the ban sources first so staff hear
+    // not_banned; everything that touches a player runs on the next game frame.
+    private async Task<ActionResult> HandleActionAsync(ActionRequest request, CancellationToken cancellation)
+    {
+        string steamId = request.Player.SteamId;
+        ulong id = ulong.Parse(steamId);
+        if (request.Kind == ActionRequest.Unban)
+        {
+            BanInfo? ban = await ReadBansAsync(steamId, cancellation);
+            if (ban is not { Banned: true }) return ActionResult.Failure(ActionResult.NotBanned);
+            // steamId is a validated SteamID64, so it is safe on a console line.
+            string line = ban.Provider == SimpleAdminBans.Provider
+                ? "css_unban " + steamId
+                : "removeid " + new SteamID(id).SteamId3 + "; writeid";
+            await OnGameThread(() =>
+            {
+                Server.ExecuteCommand(line);
+                return true;
+            });
+            Logger.LogInformation("{Actor} (Ticket Tool) unbanned {SteamId}", request.ActorName, steamId);
+            return ActionResult.Done();
+        }
+        return await OnGameThread(() => Act(request, id));
+    }
+
+    private ActionResult Act(ActionRequest request, ulong id)
+    {
+        CCSPlayerController? player = Utilities.GetPlayerFromSteamId(id);
+        if (player is not { IsValid: true, IsBot: false } || player.Connected != PlayerConnectedState.Connected)
+            return ActionResult.Failure(ActionResult.PlayerOffline);
+        // Staff text is shown as typed: CS2 color codes are control characters, which this drops.
+        string message = Text.StripFormatting(request.Text ?? "") ?? "";
+        switch (request.Kind)
+        {
+            case ActionRequest.Message:
+                player.PrintToChat(" " + ChatColors.Blue + "[Staff] " + Text.StripFormatting(request.ActorName) + ": "
+                                   + ChatColors.Default + message);
+                break;
+            case ActionRequest.Warn:
+                player.PrintToChat(" " + ChatColors.Red + "Warning from staff: " + ChatColors.Default + message);
+                player.PrintToCenter("Warning from staff: " + message);
+                break;
+            case ActionRequest.Kick:
+                if (player.UserId is int userId)
+                {
+                    string reason = GameText.ConsoleArg(message.Length > 0 ? "Kicked by staff: " + message : "Kicked by staff");
+                    Server.ExecuteCommand("kickid " + userId + " \"" + reason + "\"");
+                }
+                else
+                {
+                    player.Disconnect(NetworkDisconnectionReason.NETWORK_DISCONNECT_KICKED);
+                }
+                break;
+            default:
+                return ActionResult.Failure(ActionResult.Unsupported);
+        }
+        Logger.LogInformation("{Actor} (Ticket Tool) sent a {Kind} to {Player}", request.ActorName, request.Kind,
+            player.PlayerName);
+        return ActionResult.Done();
+    }
+
+    private void OnReportCommand(CCSPlayerController? caller, CommandInfo command)
+    {
+        if (caller is not { IsValid: true, IsBot: false })
+        {
+            command.ReplyToCommand("Only players can send a report.");
+            return;
+        }
+        TicketToolClient? client = _client;
+        if (!Config.Reports || client == null)
+        {
+            command.ReplyToCommand(GameText.ReportReply(ReportOutcome.NotEnabled));
+            return;
+        }
+        var args = new List<string>();
+        for (int i = 1; i < command.ArgCount; i++) args.Add(command.GetArg(i));
+        var (targetName, message) = GameText.SplitReport(args, name => Utilities.GetPlayers()
+            .FirstOrDefault(p => p is { IsValid: true, IsBot: false }
+                                 && string.Equals(p.PlayerName, name, StringComparison.OrdinalIgnoreCase))?.PlayerName);
+        if (message.Length == 0)
+        {
+            command.ReplyToCommand("Type !" + _reportCommand + " <message>, or !" + _reportCommand
+                                   + " <player> <message> to report someone.");
+            return;
+        }
+        ulong sid = caller.SteamID;
+        DateTime now = DateTime.UtcNow;
+        if (_lastReport.TryGetValue(sid, out DateTime last) && (now - last).TotalSeconds < Config.ReportCooldownSeconds)
+        {
+            int wait = Math.Max(1, (int)Math.Ceiling(Config.ReportCooldownSeconds - (now - last).TotalSeconds));
+            command.ReplyToCommand("You just sent a report. You can send another in " + wait + "s.");
+            return;
+        }
+        _lastReport[sid] = now;
+        command.ReplyToCommand("Sending your report...");
+        string steamId = sid.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        string name = caller.PlayerName;
+        CCSPlayerController? target = targetName == null ? null : Utilities.GetPlayers()
+            .FirstOrDefault(p => p is { IsValid: true, IsBot: false } && p.PlayerName == targetName);
+        RequestPlayer? about = target == null
+            ? null
+            : new RequestPlayer(null, target.SteamID.ToString(System.Globalization.CultureInfo.InvariantCulture), null,
+                target.PlayerName);
+        _ = Task.Run(async () =>
+        {
+            ReportResult result = await client.ReportAsync(new RequestPlayer(null, steamId, null, name), message, about,
+                ServerName());
+            if (result.Outcome == ReportOutcome.Failed)
+            {
+                _lastReport.TryRemove(sid, out _);
+                if (result.Error == "plan_not_entitled") Logger.LogWarning("Reports need the Community or Pro plan on the Discord server.");
+                else if (result.Error != "not_running")
+                    Logger.LogWarning("Sending {Name}'s report failed: {Error}", name, result.Error);
+            }
+            Server.NextFrame(() =>
+            {
+                CCSPlayerController? p = Utilities.GetPlayerFromSteamId(sid);
+                if (p is { IsValid: true }) p.PrintToChat(" " + GameText.ReportReply(result.Outcome));
+            });
+        });
+    }
+
     private static Task<T> OnGameThread<T>(Func<T> read)
     {
         var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -327,6 +477,8 @@ public sealed class TicketToolLinkPlugin : BasePlugin, IPluginConfig<PluginConfi
             yield return "Discord server: " + (s.Hello.ServerName ?? s.Hello.ServerId) + " (key \"" + s.Hello.KeyName + "\")";
         yield return "Ban sources: " + (_simpleAdmin != null ? "CS2-SimpleAdmin, then banned_user.cfg" : "banned_user.cfg")
                      + (_simpleAdminNote != null ? " (" + _simpleAdminNote + ")" : "");
+        yield return "Actions from Discord: " + (_actions.Count > 0 ? string.Join(", ", _actions) : "none");
+        yield return "In-game reports: " + (Config.Reports ? "on (!" + _reportCommand + ")" : "off");
         yield return "Lookups answered: " + s.Answered;
         if (s.LastError != null) yield return "Last problem: " + s.LastError;
     }

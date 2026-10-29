@@ -17,6 +17,7 @@ export class FakeNatives implements Natives {
   commands = new Map<string, { handler: (source: number, args: string[], raw: string) => void; restricted: boolean }>();
   printed: string[] = [];
   chat: Array<{ target: number | string; args: unknown[] }> = [];
+  dropped: Array<{ source: string; reason: string }> = [];
   source = "0";
 
   addPlayer(source: string, name: string, identifiers: string[]): void {
@@ -76,6 +77,10 @@ export class FakeNatives implements Natives {
   }
   emitNet(event: string, target: number | string, ...args: unknown[]): void {
     if (event === "chat:addMessage") this.chat.push({ target, args });
+  }
+  DropPlayer(source: string, reason: string): void {
+    this.dropped.push({ source, reason });
+    this.players.delete(source);
   }
   currentSource(): string {
     return this.source;

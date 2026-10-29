@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LookupRequest, LookupResult, SdkLogger, TicketToolClient, ClientOptions } from "../src";
+import { ActionRequest, ActionResult, LookupRequest, LookupResult, SdkLogger, TicketToolClient, ClientOptions } from "../src";
 import { FakeTicketTool, KEY, ok, signedError, unsigned } from "./fake-server";
 
 const DISCORD_ID = "123456789012345678";
@@ -156,7 +156,8 @@ describe("TicketToolClient", () => {
     fake.override("/poll", () => (failures-- > 0 ? unsigned(503, "unavailable") : ok({ ok: true, requests: [] })));
     const c = client();
     c.start();
-    await until(() => failures < 0 && c.status().state === "connected", "recovery");
+    // "connected" is set before the poll that succeeds, so wait for the log line.
+    await until(() => logs.includes("info Reconnected to Ticket Tool"), "recovery");
     expect(sleeps.slice(0, 3).every((ms, i) => ms >= 500 * 2 ** i && ms <= 1000 * 2 ** i)).toBe(true);
     expect(logs.filter((l) => l.startsWith("warn")).length).toBe(1);
     expect(logs).toContain("info Reconnected to Ticket Tool");
@@ -242,6 +243,98 @@ describe("TicketToolClient", () => {
     expect((await c.link({ name: "Jane" }, "x")).outcome).toBe("invalid_code");
     await c.stop();
     expect((await c.link({ name: "Jane" }, "x")).error).toBe("not_running");
+  });
+
+  it("lists enabled actions and reports in hello", async () => {
+    const c = client({
+      actionHandler: () => ActionResult.done(),
+      actions: () => ["kick", "message"],
+      reportsEnabled: () => true,
+    });
+    c.start();
+    const hello = await fake.waitFor("/hello");
+    expect(hello.body.actions).toEqual(["message", "kick"]);
+    expect(hello.body.events).toEqual(["player.report"]);
+  });
+
+  it("leaves actions out of hello without a handler", async () => {
+    const c = client({ actions: () => ["kick"] });
+    c.start();
+    const hello = await fake.waitFor("/hello");
+    expect(hello.body.actions).toBeUndefined();
+    expect(hello.body.events).toBeUndefined();
+  });
+
+  it("carries out an enabled action and answers ok", async () => {
+    const seen: ActionRequest[] = [];
+    const c = client({
+      actionHandler: (req) => {
+        seen.push(req);
+        return ActionResult.done();
+      },
+      actions: () => ["kick"],
+    });
+    c.start();
+    await fake.waitFor("/hello");
+    fake.queueLookup(FakeTicketTool.action("a1", { discordId: DISCORD_ID, name: "Jane" }, 9000, "kick", "Read the rules"));
+    const answer = await fake.waitFor("/respond");
+    expect(answer.body).toEqual({ requestId: "a1", ok: true });
+    expect(seen[0]).toMatchObject({ kind: "kick", message: "Read the rules", actorName: "alex" });
+    expect(seen[0].player.discordId).toBe(DISCORD_ID);
+  });
+
+  it("answers not_allowed for an action that is off, without calling the handler", async () => {
+    let called = false;
+    const c = client({
+      actionHandler: () => {
+        called = true;
+        return ActionResult.done();
+      },
+      actions: () => ["message"],
+    });
+    c.start();
+    await fake.waitFor("/hello");
+    fake.queueLookup(FakeTicketTool.action("a2", { discordId: DISCORD_ID }, 9000, "unban"));
+    const answer = await fake.waitFor("/respond");
+    expect(answer.body).toEqual({ requestId: "a2", ok: false, error: "not_allowed" });
+    expect(called).toBe(false);
+  });
+
+  it("passes on a handler's failure and skips unknown action kinds", async () => {
+    const c = client({
+      actionHandler: () => ActionResult.failure("player_offline"),
+      actions: () => ["kick"],
+    });
+    c.start();
+    await fake.waitFor("/hello");
+    fake.queueLookup(FakeTicketTool.action("a3", { discordId: DISCORD_ID }, 9000, "explode"));
+    fake.queueLookup(FakeTicketTool.action("a4", { discordId: DISCORD_ID }, 9000, "kick"));
+    const answer = await fake.waitFor("/respond");
+    expect(answer.body).toEqual({ requestId: "a4", ok: false, error: "player_offline" });
+    expect(fake.calls("/respond")).toHaveLength(1);
+  });
+
+  it("sends reports only when they are on, and maps the reply", async () => {
+    let enabled = false;
+    const c = client({ reportsEnabled: () => enabled });
+    c.start();
+    await fake.waitFor("/hello");
+    expect((await c.report({ discordId: DISCORD_ID, name: "Jane" }, "help")).outcome).toBe("not_enabled");
+    enabled = true;
+    fake.override("/event", () => ok({ ok: true, result: "opened" }));
+    const opened = await c.report({ discordId: DISCORD_ID, name: "Jane" }, "  griefing at spawn ", { name: "Bob" }, "rp-1");
+    expect(opened).toEqual({ outcome: "opened", success: true, error: null });
+    expect(fake.calls("/event")[0].body).toEqual({
+      type: "player.report",
+      player: { discordId: DISCORD_ID, name: "Jane" },
+      message: "griefing at spawn",
+      target: { name: "Bob" },
+      server: "rp-1",
+    });
+    fake.override("/event", () => ok({ ok: true, result: "ignored" }));
+    expect((await c.report({ name: "Jane" }, "x")).outcome).toBe("ignored");
+    fake.override("/event", () => signedError(429, "rate_limited"));
+    expect((await c.report({ name: "Jane" }, "x")).outcome).toBe("rate_limited");
   });
 
   it("refuses plain http except for localhost", () => {

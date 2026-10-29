@@ -23,6 +23,25 @@ ban-provider: auto
 # Seconds a player has to wait between /ttlink attempts.
 link-cooldown-seconds: 5
 
+# What staff can do to a player from Discord: from a ticket's Run an app action, a flow or an
+# automation rule. Each one is off until you turn it on here. Needs the Pro plan.
+#   message  sends the player a chat message
+#   warn     sends the player a warning
+#   kick     kicks the player, with the reason staff typed
+#   unban    lifts the player's ban through the ban plugin above (or the server ban list)
+actions:
+  message: false
+  warn: false
+  kick: false
+  unban: false
+
+# In-game reports: /report [player] <message> sends the report to Ticket Tool, where an
+# automation rule ("When a player sends a report in game") can open a ticket. Needs the Community or Pro plan.
+reports:
+  enabled: false
+  # Seconds a player has to wait between reports.
+  cooldown-seconds: 60
+
 # Where Ticket Tool lives. Leave this alone unless Ticket Tool support asks you to change it.
 api-url: "https://dash.ticket-tool.app"
 

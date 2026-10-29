@@ -15,6 +15,7 @@ public static class StubRuntime
     public static string ConfigJson;
     public static readonly ConcurrentDictionary<string, string> Data = new ConcurrentDictionary<string, string>();
     public static readonly ConcurrentQueue<string> Lines = new ConcurrentQueue<string>();
+    public static readonly ConcurrentQueue<string> Chat = new ConcurrentQueue<string>();
     public static readonly List<BasePlayer> AllPlayers = new List<BasePlayer>();
     public static readonly StubPlayers Players = new StubPlayers();
     public static readonly StubServer Server = new StubServer();

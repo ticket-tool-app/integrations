@@ -46,6 +46,30 @@ client.Stop();    // sends /goodbye
 
 Every `await` inside the SDK uses `ConfigureAwait(false)`, so nothing is posted back to a game's synchronization context, and the blocking `Stop()` is safe to call from a game's main thread.
 
+### Player actions and reports
+
+Both are off unless the plugin turns them on, and a plugin should only do that when the server owner did:
+
+```csharp
+new TicketToolClientOptions
+{
+    // ...as above
+    ActionHandler = (action, cancellation) =>
+    {
+        // action.Kind is message, warn, kick or unban; action.Text is the staff text.
+        var done = new TaskCompletionSource<ActionResult>();
+        game.RunOnMainThread(() => done.SetResult(Kick(action.Player.SteamId, action.Text)));
+        return done.Task;
+    },
+    Actions = () => config.Actions,          // the kinds the owner turned on; read at each /hello
+    ReportsEnabled = () => config.Reports,
+};
+
+ReportResult result = await client.ReportAsync(new RequestPlayer(null, steamId, null, name), "Someone is flying");
+```
+
+The SDK answers `not_allowed` itself for a kind that isn't in `Actions`, without calling the handler, so a bug in the plugin can't run an action the owner left off. Call `client.RefreshHello()` after the owner changes either setting.
+
 `client.Status` returns a `ClientStatus` snapshot (state, last error phrased for an admin, the `/hello` reply, lookups answered, clock offset) for a status command.
 
 ### HTTP

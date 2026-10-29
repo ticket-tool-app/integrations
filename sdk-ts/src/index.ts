@@ -7,5 +7,5 @@ export { SdkLogger, silentLogger } from "./logger";
 export { HttpSender, HttpReply, HttpRequestOptions, nodeHttpSender, MAX_REPLY_BYTES } from "./http";
 export { apiBase, DEFAULT_API_URL, API_PATH, SIGNATURE_WINDOW_SECONDS } from "./transport";
 export { clip, emptyToNull, stripCfxColors, stripMinecraftColors } from "./text";
-export { MAX_REASON, MAX_FIELDS } from "./messages";
+export { MAX_REASON, MAX_FIELDS, ReportPlayer } from "./messages";
 export * from "./types";

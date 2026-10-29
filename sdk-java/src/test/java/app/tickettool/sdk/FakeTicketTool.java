@@ -96,6 +96,20 @@ final class FakeTicketTool implements AutoCloseable {
         return r;
     }
 
+    static Map<String, Object> action(String id, String uuid, long expiresInMillis, String kind, String message) {
+        Map<String, Object> action = new LinkedHashMap<>();
+        action.put("kind", kind);
+        action.put("message", message);
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("id", id);
+        r.put("type", "player.action");
+        r.put("expiresAt", java.time.Instant.now().plusMillis(expiresInMillis).toString());
+        r.put("player", Map.of("uuid", uuid, "name", "Notch"));
+        r.put("action", action);
+        r.put("actor", Map.of("name", "alex"));
+        return r;
+    }
+
     private void handle(HttpExchange ex) throws IOException {
         try (ex) {
             String endpoint = ex.getRequestURI().getPath().substring("/api/plugin/v1".length());

@@ -32,6 +32,8 @@ Players need their Steam account linked on their Ticket Tool **Linked accounts**
 
 Both work from the server console and RCON, or in chat as `/ticketlink` for admins and anyone granted the permission. `tickettool` works as an alias.
 
+When `reports` is on, every player can use `/report [player] <message>` (the name is set by `report-command`).
+
 ## Configuration
 
 ```json
@@ -39,6 +41,10 @@ Both work from the server console and RCON, or in chat as `/ticketlink` for admi
   "key": "",
   "api-url": "https://dash.ticket-tool.app",
   "server-name": "",
+  "actions": [],
+  "reports": false,
+  "report-command": "report",
+  "report-cooldown-seconds": 60,
   "debug": false
 }
 ```
@@ -48,7 +54,24 @@ Both work from the server console and RCON, or in chat as `/ticketlink` for admi
 | `key` | The full key from the dashboard |
 | `api-url` | Leave as is; for testing against a staging server |
 | `server-name` | The server name staff see on the card; empty uses the key's name |
+| `actions` | Staff actions to allow: any of `message`, `warn`, `kick`, `unban` |
+| `reports` | `true` turns on the report command |
+| `report-command` | Chat command name for reports; a change takes effect when the plugin reloads |
+| `report-cooldown-seconds` | Seconds between reports per player |
 | `debug` | More detail in the console. The key is never written to the log |
+
+## Staff actions and in-game reports
+
+Staff can act on a player from Discord: from **Run an app action** on a ticket, a flow, or an automation rule. Every action is off until you turn it on, and Ticket Tool only offers the ones you did. Actions need the Pro plan; reports work on Community and Pro.
+
+| Action | What happens in game |
+| --- | --- |
+| `message` | The player gets a chat message from the staff member |
+| `warn` | The player gets a warning in chat |
+| `kick` | The player is kicked with the reason staff typed |
+| `unban` | The player is removed from the server's ban list (`ServerUsers`), which is then saved |
+
+Staff text is shown as typed, without Rust's rich text tags. With `reports` on, `/report [player] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When a player sends a report in game** can open a ticket. The first word counts as the reported player only when it's the name of someone online, and each player can send one report every `report-cooldown-seconds`.
 
 ## What the plugin sends
 

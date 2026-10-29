@@ -21,6 +21,8 @@
 
 A game plugin connects your game server to one Discord server. When someone opens a ticket, Ticket Tool asks the plugin about the opener's linked player and shows staff what it says: name, UUID, whether they're online, when they were last seen and any active ban. Minecraft players link their account by typing a short code in game; FiveM and RedM players are matched by their Discord account, and Garry's Mod, Rust and CS2 players by the Steam account they linked to Discord.
 
+Server owners can also let staff message, warn, kick or unban a player from Discord, and let players send `/report` from in game to open a ticket. Both are off until the owner turns them on.
+
 The plugin only makes outbound HTTPS requests. Ticket Tool never connects to your game server, its database or your ban plugin.
 
 [ticket-tool.app](https://ticket-tool.app) · [Dashboard](https://dash.ticket-tool.app) · [Documentation](https://ticket-tool.app/docs)

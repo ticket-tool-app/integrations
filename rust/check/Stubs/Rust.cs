@@ -13,6 +13,10 @@ public class BasePlayer
     public string UserIDString { get { return userIdString; } }
     public bool IsConnected { get { return connected; } }
 
+    public void ChatMessage(string msg) { StubRuntime.AssertMainThread(); StubRuntime.Chat.Enqueue(userIdString + ": " + msg); }
+
+    public void Kick(string reason) { StubRuntime.AssertMainThread(); connected = false; StubRuntime.Chat.Enqueue(userIdString + " kicked: " + reason); }
+
     public static BasePlayer FindAwakeOrSleeping(string strNameOrIDOrIP)
     {
         StubRuntime.AssertMainThread();
@@ -43,6 +47,14 @@ public static class ServerUsers
     }
 
     public static Dictionary<ulong, User> users = new Dictionary<ulong, User>();
+
+    public static void Remove(ulong uid)
+    {
+        StubRuntime.AssertMainThread();
+        users.Remove(uid);
+    }
+
+    public static void Save() { StubRuntime.AssertMainThread(); }
 
     public static User Get(ulong uid)
     {

@@ -19,6 +19,7 @@ export interface Natives {
   /** Registers a local event handler; `source` is read from the global while it runs. */
   on(event: string, handler: (...args: any[]) => void): void;
   emitNet(event: string, target: number | string, ...args: unknown[]): void;
+  DropPlayer(source: string, reason: string): void;
   /** The current event's source, for handlers registered with `on`. */
   currentSource(): string;
   /** Calls `exports[resource][name](...args)`; throws when the export is missing. */
@@ -53,6 +54,7 @@ export function fromGlobals(): Natives {
     RegisterCommand: (n, h, r) => fn("RegisterCommand")(n, h, r),
     on: (e, h) => fn("on")(e, h),
     emitNet: (e, t, ...a) => fn("emitNet")(e, t, ...a),
+    DropPlayer: (s, r) => fn("DropPlayer")(s, r),
     currentSource: () => String(g.source),
     callExport: (resource, name, ...args) => {
       const target = g.exports?.[resource];

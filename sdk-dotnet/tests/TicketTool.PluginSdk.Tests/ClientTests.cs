@@ -18,7 +18,8 @@ public sealed class ClientTests : IDisposable
     public static IEnumerable<object[]> Senders => new[] { new object[] { "httpclient" }, new object[] { "webrequest" } };
 
     private TicketToolClient Client(LookupHandler? handler = null, string sender = "httpclient",
-        TimeSpan? budget = null, string type = "rust")
+        TimeSpan? budget = null, string type = "rust", ActionHandler? actions = null, string[]? enabled = null,
+        bool reports = false)
     {
         var client = new TicketToolClient(new TicketToolClientOptions
         {
@@ -29,6 +30,9 @@ public sealed class ClientTests : IDisposable
             Handler = handler ?? ((r, _) => Task.FromResult(LookupResult.Answer(
                 new PlayerProfile { Name = "Josh", Online = true }, BanInfo.NotBanned("server")))),
             AnswerBudget = budget ?? TimeSpan.FromSeconds(3),
+            ActionHandler = actions,
+            Actions = () => enabled ?? Array.Empty<string>(),
+            ReportsEnabled = () => reports,
             Sender = sender == "webrequest" ? new WebRequestSender() : new HttpClientSender(),
             // Waits are recorded, not slept, so backoff tests run fast.
             Delay = (wait, token) =>
@@ -321,5 +325,111 @@ public sealed class ClientTests : IDisposable
         await Task.Delay(100);
         Assert.Equal(ClientState.Connected, client.Status.State);
         Assert.Equal(0, client.Status.Answered);
+    }
+
+    [Fact]
+    public async Task HelloListsOnlyEnabledActionsAndReports()
+    {
+        var client = Client(actions: (r, _) => Task.FromResult(ActionResult.Done()),
+            enabled: new[] { "kick", "message", "ban" }, reports: true);
+        client.Start();
+        await Await(() => client.Status.State == ClientState.Connected, "connected");
+        var hello = _server.Calls("/hello").Single().Body;
+        Assert.Equal(new List<object> { "message", "kick" }, hello["actions"]);
+        Assert.Equal(new List<object> { "player.report" }, hello["events"]);
+    }
+
+    [Fact]
+    public async Task HelloLeavesActionsOutWithoutAHandler()
+    {
+        var client = Client(enabled: new[] { "kick" });
+        client.Start();
+        await Await(() => client.Status.State == ClientState.Connected, "connected");
+        var hello = _server.Calls("/hello").Single().Body;
+        Assert.False(hello.ContainsKey("actions"));
+        Assert.False(hello.ContainsKey("events"));
+        _server.QueueLookup(FakeTicketTool.Action("act-1", SteamId, 5000, "kick", "Bye"));
+        var resp = NextResponse().Body;
+        Assert.Equal(false, resp["ok"]);
+        Assert.Equal("not_allowed", resp["error"]);
+    }
+
+    [Fact]
+    public void CarriesOutAnEnabledAction()
+    {
+        ActionRequest? seen = null;
+        Client(actions: (r, _) =>
+        {
+            seen = r;
+            return Task.FromResult(ActionResult.Done());
+        }, enabled: new[] { "warn" }).Start();
+        _server.QueueLookup(FakeTicketTool.Action("act-1", SteamId, 5000, "warn", "Stop spawn camping"));
+        var resp = NextResponse().Body;
+        Assert.Equal("act-1", resp["requestId"]);
+        Assert.Equal(true, resp["ok"]);
+        Assert.Equal("warn", seen!.Kind);
+        Assert.Equal("Stop spawn camping", seen.Text);
+        Assert.Equal("mod.alex", seen.ActorName);
+        Assert.Equal(SteamId, seen.Player.SteamId);
+    }
+
+    [Fact]
+    public void RefusesADisabledActionWithoutCallingTheHandler()
+    {
+        int called = 0;
+        Client(actions: (r, _) =>
+        {
+            Interlocked.Increment(ref called);
+            return Task.FromResult(ActionResult.Done());
+        }, enabled: new[] { "message" }).Start();
+        _server.QueueLookup(FakeTicketTool.Action("act-1", SteamId, 5000, "kick", "Bye"));
+        Assert.Equal("not_allowed", NextResponse().Body["error"]);
+        Assert.Equal(0, called);
+    }
+
+    [Fact]
+    public void PassesFailuresThroughAndSkipsUnknownKinds()
+    {
+        Client(actions: (r, _) => Task.FromResult(ActionResult.Failure(ActionResult.PlayerOffline, "Not on")),
+            enabled: new[] { "message", "kick" }).Start();
+        _server.QueueLookup(FakeTicketTool.Action("odd", SteamId, 5000, "slay", null));
+        _server.QueueLookup(FakeTicketTool.Action("no-steam", "nope", 5000, "kick", "Bye"));
+        _server.QueueLookup(FakeTicketTool.Action("act-1", SteamId, 5000, "message", "Hi"));
+        var got = new Dictionary<string, Dictionary<string, object>>();
+        for (int i = 0; i < 2; i++)
+        {
+            var r = NextResponse().Body;
+            got[(string)r["requestId"]] = r;
+        }
+        Assert.Equal("unknown_player", got["no-steam"]["error"]);
+        Assert.Equal("player_offline", got["act-1"]["error"]);
+        Assert.Equal("Not on", got["act-1"]["message"]);
+        Assert.False(_server.Responses.TryTake(out _, 300));
+    }
+
+    [Fact]
+    public async Task SendsReportsOnlyWhenEnabled()
+    {
+        var off = Client();
+        off.Start();
+        var player = new RequestPlayer(null, SteamId, null, "Josh");
+        var skipped = await off.ReportAsync(player, "Someone is flying");
+        Assert.Equal(ReportOutcome.NotEnabled, skipped.Outcome);
+        Assert.Empty(_server.Calls("/event"));
+
+        var on = Client(reports: true);
+        on.Start();
+        var sent = await on.ReportAsync(player, "  Someone is flying  ",
+            new RequestPlayer(null, null, null, "Flyer"), "main");
+        Assert.True(sent.Success);
+        var body = _server.Calls("/event").Single().Body;
+        Assert.Equal("player.report", body["type"]);
+        Assert.Equal("Someone is flying", body["message"]);
+        Assert.Equal(SteamId, ((Dictionary<string, object>)body["player"])["steamId"]);
+        Assert.Equal("Flyer", ((Dictionary<string, object>)body["target"])["name"]);
+        Assert.Equal("main", body["server"]);
+
+        _server.Override("/event", _ => FakeTicketTool.Canned.Error(429, "rate_limited"));
+        Assert.Equal(ReportOutcome.RateLimited, (await on.ReportAsync(player, "Again")).Outcome);
     }
 }

@@ -55,6 +55,19 @@ public final class ChatMessages {
         return Colors.translate(text);
     }
 
+    /**
+     * Like {@link #format(String, Map)}, but the values are text from Discord, so
+     * their color codes are left as typed instead of being applied.
+     */
+    public String formatPlain(String key, Map<String, String> values) {
+        String text = Colors.translate(raw(key));
+        for (Map.Entry<String, String> e : values.entrySet()) {
+            String value = e.getValue() == null ? "" : e.getValue().replace('§', '&');
+            text = text.replace("{" + e.getKey() + "}", value);
+        }
+        return text;
+    }
+
     public String format(String key) {
         return format(key, Map.of());
     }

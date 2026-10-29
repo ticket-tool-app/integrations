@@ -33,6 +33,8 @@ Players need their Steam account linked on their Ticket Tool **Linked accounts**
 
 Both work from the server console and RCON, and in game as `!ticketlink` for root admins.
 
+When `reports` is on, every player can use `!report [player] <message>` (or `/report`; the name is set by `report-command`).
+
 ## Configuration
 
 ```json
@@ -41,6 +43,10 @@ Both work from the server console and RCON, and in game as `!ticketlink` for roo
   "api-url": "https://dash.ticket-tool.app",
   "server-name": "",
   "simpleadmin": "auto",
+  "actions": [],
+  "reports": false,
+  "report-command": "report",
+  "report-cooldown-seconds": 60,
   "debug": false,
   "ConfigVersion": 1
 }
@@ -52,7 +58,24 @@ Both work from the server console and RCON, and in game as `!ticketlink` for roo
 | `api-url` | Leave as is; for testing against a staging server |
 | `server-name` | The server name staff see on the card; empty uses the key's name |
 | `simpleadmin` | `auto` reads CS2-SimpleAdmin's bans when it's installed; `off` never does |
+| `actions` | Staff actions to allow: any of `message`, `warn`, `kick`, `unban` |
+| `reports` | `true` turns on the report command |
+| `report-command` | Chat command name for reports; a change takes effect when the plugin reloads |
+| `report-cooldown-seconds` | Seconds between reports per player |
 | `debug` | More detail in the console. The key is never written to the log |
+
+## Staff actions and in-game reports
+
+Staff can act on a player from Discord: from **Run an app action** on a ticket, a flow, or an automation rule. Every action is off until you turn it on, and Ticket Tool only offers the ones you did. Actions need the Pro plan; reports work on Community and Pro.
+
+| Action | What happens in game |
+| --- | --- |
+| `message` | The player gets a chat message from the staff member |
+| `warn` | The player gets a warning in chat and in the middle of the screen |
+| `kick` | The player is kicked with the reason staff typed |
+| `unban` | The ban is lifted where it was found: `css_unban` for CS2-SimpleAdmin, or `removeid` and `writeid` for `banned_user.cfg` |
+
+With `reports` on, `!report [player] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When a player sends a report in game** can open a ticket. The first word counts as the reported player only when it's the name of someone online, and each player can send one report every `report-cooldown-seconds`.
 
 ## Ban sources
 

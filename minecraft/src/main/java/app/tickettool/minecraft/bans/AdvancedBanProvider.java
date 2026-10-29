@@ -21,6 +21,11 @@ final class AdvancedBanProvider implements BanProvider {
     }
 
     @Override
+    public String unbanCommand(String name) {
+        return "advancedban:unban " + name;
+    }
+
+    @Override
     public String displayName() {
         return "AdvancedBan";
     }
