@@ -1,5 +1,6 @@
 -- Protocol v1 client: signed requests with verified replies, /hello, one
--- long-poll loop, /respond for each lookup and /goodbye on stop. GMod runs
+-- long-poll loop, /respond for each lookup or action, /event for reports and
+-- /goodbye on stop. GMod runs
 -- all Lua on one thread and HTTP() is callback based, so the "loop" is a
 -- chain of callbacks and timers; a generation counter makes callbacks from a
 -- stopped client do nothing.
@@ -22,6 +23,10 @@ M.RATE_LIMIT_WAIT = 60
 M.TOO_MANY_POLLS_MIN_WAIT = 15
 M.ANSWER_BUDGET = 3
 M.KNOWN_PARTS = { profile = true, bans = true }
+M.ACTION_KINDS = { "message", "warn", "kick", "unban" }
+M.ACTION_BUDGET = 8
+M.MAX_ACTION_MESSAGE = 500
+M.MAX_REPORT_MESSAGE = 1000
 
 -- Returns the base URL every endpoint hangs off, or nil and a message.
 function M.apiBase(apiUrl)
@@ -59,6 +64,7 @@ Client.__index = Client
 
 --[[ opts: key (signer.parseKey result), apiBase, plugin {type, version, platform},
      userAgent, handler(request, reply), banProviders(), log {info, warn, debug},
+     actionHandler(action, reply), actions() -> enabled kinds, reportsEnabled(),
      http (GMod HTTP), after(seconds, fn), now() wall seconds, random() in [0,1),
      nonce() ]]
 function M.new(opts)
@@ -69,6 +75,9 @@ function M.new(opts)
 	self.userAgent = opts.userAgent or ("ticket-tool-" .. self.plugin.type .. "/" .. self.plugin.version)
 	self.handler = assert(opts.handler, "handler")
 	self.banProviders = opts.banProviders or function() return {} end
+	self.actionHandler = opts.actionHandler
+	self.actions = opts.actions or function() return {} end
+	self.reportsEnabled = opts.reportsEnabled or function() return false end
 	self.log = opts.log
 	self.http = opts.http
 	self.after = opts.after
@@ -273,10 +282,25 @@ function Client:helloBody()
 		if i > 8 then break end
 		providers[#providers + 1] = common.clip(p, 32)
 	end
+	local actions = {}
+	if self.actionHandler then
+		local enabled = {}
+		for _, k in ipairs(self.actions() or {}) do enabled[k] = true end
+		for _, k in ipairs(M.ACTION_KINDS) do
+			if enabled[k] then actions[#actions + 1] = k end
+		end
+	end
 	local plugin = json.object("type", self.plugin.type, "version", self.plugin.version,
 		"platform", self.plugin.platform)
 	return json.object("protocol", M.PROTOCOL_VERSION, "plugin", plugin,
-		"banProviders", #providers > 0 and json.array(providers) or nil)
+		"banProviders", #providers > 0 and json.array(providers) or nil,
+		"actions", #actions > 0 and json.array(actions) or nil,
+		"events", self.reportsEnabled() and json.array({ "player.report" }) or nil)
+end
+
+-- Sends /hello again so the dashboard sees changed actions or reports.
+function Client:refreshHello()
+	self.needHello = true
 end
 
 local function field(t, k)
@@ -436,6 +460,7 @@ end
 function Client:dispatch(item)
 	local request = M.parseRequest(item)
 	if not request then return end
+	if request.type == "player.action" then return self:dispatchAction(item) end
 	if request.type ~= "player.lookup" then
 		self.log.debug("Ignoring request type " .. request.type)
 		return
@@ -470,6 +495,130 @@ function Client:dispatch(item)
 		self.log.warn("Lookup " .. request.id .. " failed: " .. tostring(err))
 		reply({ ok = false, error = "error", message = "The addon hit an error answering this lookup" })
 	end
+end
+
+local function isActionKind(kind)
+	for _, k in ipairs(M.ACTION_KINDS) do
+		if k == kind then return true end
+	end
+	return false
+end
+
+-- A player.action poll item, or nil when it's malformed or an unknown kind.
+function M.parseAction(item)
+	if type(item) ~= "table" or item.type ~= "player.action" then return nil end
+	local id = str(item.id)
+	local expiresAt = common.parseIso(item.expiresAt)
+	local kind = str(field(item.action, "kind"))
+	if not id or not expiresAt or not isActionKind(kind) then return nil end
+	local player = type(item.player) == "table" and item.player or {}
+	local steamId = str(player.steamId)
+	if steamId and not common.isSteamId64(steamId) then steamId = nil end
+	local message = kind ~= "unban" and str(field(item.action, "message")) or nil
+	if message and common.trim(message) == "" then message = nil end
+	local actor = common.cleanText(str(field(item.actor, "name")))
+	return {
+		id = id, expiresAt = expiresAt, steamId = steamId, name = str(player.name), kind = kind,
+		message = message and common.clip(message, M.MAX_ACTION_MESSAGE) or nil,
+		actorName = (actor and actor ~= "") and common.clip(actor, 64) or "Ticket Tool",
+	}
+end
+
+function M.respondActionBody(action, result)
+	if result.ok then return json.object("requestId", action.id, "ok", true) end
+	return json.object("requestId", action.id, "ok", false, "error", result.error or "error",
+		"message", result.message and common.clip(result.message, 200) or nil)
+end
+
+function Client:dispatchAction(item)
+	local action = M.parseAction(item)
+	if not action then return end
+	local received = self:serverNow()
+	if action.expiresAt <= received then
+		self.log.debug("Dropping expired action " .. action.id)
+		return
+	end
+	local allowed = false
+	if self.actionHandler then
+		for _, k in ipairs(self.actions() or {}) do
+			if k == action.kind then allowed = true end
+		end
+	end
+	if not allowed then
+		self.log.info("Refused a " .. action.kind .. " from " .. action.actorName
+			.. ": that action is off in the addon's config")
+		return self:respondAction(action, { ok = false, error = "not_allowed" })
+	end
+	if not action.steamId then
+		return self:respondAction(action, { ok = false, error = "unknown_player" })
+	end
+	local done = false
+	local gen = self.gen
+	local function reply(result)
+		if done then return end
+		done = true
+		if gen ~= self.gen then return end
+		-- Unlike a lookup, a late action already happened in game, so staff still hear about it.
+		self:respondAction(action, result or { ok = false, error = "error", message = "The addon had no answer" })
+	end
+	local budget = math.min(received + M.ACTION_BUDGET, action.expiresAt) - received
+	self.after(math.max(0.05, budget), function()
+		reply({ ok = false, error = "error", message = "The game server took too long to carry it out" })
+	end)
+	local ok, err = pcall(self.actionHandler, action, reply)
+	if not ok then
+		self.log.warn("Action " .. action.id .. " failed: " .. tostring(err))
+		reply({ ok = false, error = "error", message = "The addon hit an error carrying out this action" })
+	end
+end
+
+function Client:respondAction(action, result)
+	self:call("/respond", M.respondActionBody(action, result), M.CALL_TIMEOUT, function(_, err)
+		if not err then
+			self.answered = self.answered + 1
+		elseif err.error == "unknown_request" then
+			self.log.debug("Action " .. action.id .. " expired before the answer arrived")
+		else
+			self.log.warn("Ticket Tool refused the result of action " .. action.id .. ": "
+				.. tostring(err.error or err.message))
+		end
+	end)
+end
+
+local function reportPlayer(p)
+	local name = common.cleanText(p.name)
+	return json.object("steamId", common.isSteamId64(p.steamId) and p.steamId or nil,
+		"name", common.clip((name and name ~= "") and name or "Unknown", 64))
+end
+
+function M.reportBody(from, message, target, server)
+	local targetName = target and common.cleanText(target.name)
+	server = server and common.trim(server) or ""
+	return json.object("type", "player.report", "player", reportPlayer(from),
+		"message", common.clip(common.trim(message), M.MAX_REPORT_MESSAGE),
+		"target", (targetName and targetName ~= "") and reportPlayer(target) or json.null,
+		"server", server ~= "" and common.clip(server, 64) or json.null)
+end
+
+--[[ Sends an in-game report; from and target are { steamId, name }. Pass the
+     player who ran the command, never values from its arguments.
+     cb({ outcome = "opened"|"ignored"|"rate_limited"|"not_enabled"|"failed", error }) ]]
+function Client:report(from, message, target, server, cb)
+	if self.closed then return cb({ outcome = "failed", error = "not_running" }) end
+	if not self.reportsEnabled() then return cb({ outcome = "not_enabled", error = "not_enabled" }) end
+	if common.trim(message) == "" then return cb({ outcome = "failed", error = "empty_message" }) end
+	self:call("/event", M.reportBody(from, message, target, server), M.CALL_TIMEOUT, function(body, err)
+		if not err then
+			return cb({ outcome = body.result == "opened" and "opened" or "ignored" })
+		end
+		if err.kind == "api" then
+			local code = err.error or ("http_" .. tostring(err.status))
+			return cb({ outcome = code == "rate_limited" and "rate_limited" or "failed", error = code })
+		end
+		self.log.warn("Couldn't reach Ticket Tool to send " .. tostring(from.name) .. "'s report: "
+			.. tostring(err.message))
+		cb({ outcome = "failed", error = "network" })
+	end)
 end
 
 function Client:respond(request, result)

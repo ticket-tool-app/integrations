@@ -96,6 +96,8 @@ return function(stub)
 			s.pending = answer
 			loop.after(s.pollWait, answer)
 			return
+		elseif endpoint == "/event" then
+			return reply(req, endpoint, 200, { ok = true, result = "opened" }, true, nonce)
 		elseif endpoint == "/respond" or endpoint == "/goodbye" then
 			return reply(req, endpoint, 200, { ok = true }, true, nonce)
 		end
@@ -130,6 +132,20 @@ return function(stub)
 			expiresAt = os.date("!%Y-%m-%dT%H:%M:%S.000Z", s.now() + 5),
 			player = { uuid = json.null, steamId = "76561197960287930", discordId = json.null, name = "Gabe" },
 			include = { "profile", "bans" },
+		}
+		for k, v in pairs(fields or {}) do item[k] = v end
+		s.queue[#s.queue + 1] = item
+		if s.pending then s.pending() end
+		return item
+	end
+
+	function s.action(kind, message, fields)
+		local item = {
+			id = "act-" .. tostring(#s.received), type = "player.action",
+			expiresAt = os.date("!%Y-%m-%dT%H:%M:%S.000Z", s.now() + 10),
+			player = { uuid = json.null, steamId = "76561197960287930", discordId = json.null, name = "Gabe" },
+			action = { kind = kind, message = message == nil and json.null or message },
+			actor = { name = "mod.alex" },
 		}
 		for k, v in pairs(fields or {}) do item[k] = v end
 		s.queue[#s.queue + 1] = item
