@@ -67,6 +67,9 @@ public final class AdminCommand implements TabExecutor {
                     hello.serverName() == null ? hello.serverId() : hello.serverName()));
         }
         m.send(sender, "admin.status.ban-provider", Map.of("provider", plugin.banProviderName()));
+        List<String> actions = plugin.enabledActions();
+        m.send(sender, "admin.status.actions", Map.of("actions", actions.isEmpty() ? "none" : String.join(", ", actions)));
+        m.send(sender, plugin.reportsEnabled() ? "admin.status.reports-on" : "admin.status.reports-off");
         m.send(sender, "admin.status.answered", Map.of("count", Long.toString(s.answered())));
         if (Math.abs(s.clockOffsetSeconds()) > 5) {
             m.send(sender, "admin.status.clock", Map.of("seconds", Long.toString(s.clockOffsetSeconds())));

@@ -33,6 +33,11 @@ final class LibertyBansProvider implements BanProvider {
     }
 
     @Override
+    public String unbanCommand(String name) {
+        return "libertybans:unban " + name;
+    }
+
+    @Override
     public String displayName() {
         return "LibertyBans";
     }

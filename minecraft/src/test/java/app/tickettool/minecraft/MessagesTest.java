@@ -31,7 +31,7 @@ class MessagesTest {
 
     @Test
     void everyKeyTheCodeSendsExists() throws IOException {
-        Pattern sent = Pattern.compile("\"((?:link|admin)\\.[a-z.-]+)\"");
+        Pattern sent = Pattern.compile("\"((?:link|admin|report|action)\\.[a-z.-]+)\"");
         try (Stream<Path> files = Files.walk(Path.of("src/main/java"))) {
             for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
                 Matcher m = sent.matcher(Files.readString(file));
@@ -55,6 +55,13 @@ class MessagesTest {
         ChatMessages messages = ChatMessages.of(bundled);
         assertEquals("§aLinked to Discord user §falex§a. You're all set!",
                 messages.format("link.linked", Map.of("username", "alex")));
+    }
+
+    @Test
+    void leavesColorCodesInStaffTextAsTyped() {
+        ChatMessages messages = ChatMessages.of(bundled);
+        assertEquals("§c§lWarning from staff: §r§c&4grief &kagain",
+                messages.formatPlain("action.warn", Map.of("message", "&4grief §kagain", "actor", "mod")));
     }
 
     @Test

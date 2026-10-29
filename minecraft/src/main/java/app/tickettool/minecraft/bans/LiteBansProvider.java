@@ -23,6 +23,11 @@ final class LiteBansProvider implements BanProvider {
     }
 
     @Override
+    public String unbanCommand(String name) {
+        return "litebans:unban " + name;
+    }
+
+    @Override
     public String displayName() {
         return "LiteBans";
     }

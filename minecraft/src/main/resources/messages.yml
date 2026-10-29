@@ -20,6 +20,25 @@ link:
   not-configured: "&cAccount linking isn't set up on this server yet. Let an admin know."
   failed: "&cSomething went wrong while linking your account. Try again in a minute."
 
+report:
+  usage: "&7Type &f/{label} <message>&7, or &f/{label} <player> <message>&7 to report someone."
+  players-only: "&cOnly players can send a report."
+  not-enabled: "&cReports aren't turned on for this server."
+  cooldown: "&7You just sent a report. You can send another in {seconds}s."
+  sending: "&7Sending your report..."
+  sent: "&aThanks! Your report reached the staff team."
+  not-taken: "&eThe staff team isn't taking reports this way right now. Try their Discord server instead."
+  rate-limited: "&eLots of reports are coming in right now. Try again in a minute."
+  failed: "&cYour report couldn't be sent. Try again in a minute."
+
+# What players see when staff act on them from Discord. {actor} is the staff member's Discord
+# name and {message} is what they typed. Staff text is shown as typed: its & codes aren't applied.
+action:
+  message: "&9[Staff] &f{actor}&7: &f{message}"
+  warn: "&c&lWarning from staff: &r&c{message}"
+  kick: "&cYou were kicked by staff.\n&7{message}"
+  kick-no-reason: "&cYou were kicked by staff."
+
 admin:
   usage: "&7Usage: &f/{label} status&7 or &f/{label} reload"
   reloading: "&7Reloading config.yml and messages.yml..."
@@ -31,6 +50,9 @@ admin:
     key: "&7Key: &f{key} &7({name})"
     discord: "&7Discord server: &f{server}"
     ban-provider: "&7Bans from: &f{provider}"
+    actions: "&7Actions staff can take from Discord: &f{actions}"
+    reports-on: "&7In-game reports: &fon"
+    reports-off: "&7In-game reports: &foff"
     answered: "&7Lookups answered since start: &f{count}"
     clock: "&7Clock corrected by &f{seconds}s&7 to match Ticket Tool. Check this server's time sync."
     last-error: "&7Last problem ({ago} ago): &f{error}"

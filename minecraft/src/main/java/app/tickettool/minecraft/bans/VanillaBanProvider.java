@@ -23,6 +23,11 @@ final class VanillaBanProvider implements BanProvider {
     }
 
     @Override
+    public String unbanCommand(String name) {
+        return "minecraft:pardon " + name;
+    }
+
+    @Override
     public String displayName() {
         return "the server ban list";
     }
