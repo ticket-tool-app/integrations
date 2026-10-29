@@ -88,7 +88,7 @@ Staff can act on a player from Discord: from **Run an app action** on a ticket, 
 | `kick` | The player is kicked with the reason staff typed |
 | `unban` | The ban is lifted where it was found: `ULib.unban` for ULX, `sam.player.unban` for SAM, or `removeid` and `writeid` for the server list |
 
-With `reports` on, `!report [player] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When the game server sends a report** can open a ticket. The first word counts as the reported player only when it's the exact name of someone online. The command is kept out of public chat, the reporter is always the player who typed it, and each player can send one report every `report-cooldown` seconds.
+With `reports` on, `!report [player] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When a player sends a report in game** can open a ticket. The first word counts as the reported player only when it's the exact name of someone online. The command is kept out of public chat, the reporter is always the player who typed it, and each player can send one report every `report-cooldown` seconds.
 
 ## Ban sources
 

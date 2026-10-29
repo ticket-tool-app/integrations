@@ -75,7 +75,7 @@ Staff can act on a player from Discord: from **Run an app action** on a ticket, 
 | `kick` | The player is kicked with the reason staff typed |
 | `unban` | The ban is lifted where it was found: `css_unban` for CS2-SimpleAdmin, or `removeid` and `writeid` for `banned_user.cfg` |
 
-With `reports` on, `!report [player] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When the game server sends a report** can open a ticket. The first word counts as the reported player only when it's the name of someone online, and each player can send one report every `report-cooldown-seconds`.
+With `reports` on, `!report [player] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When a player sends a report in game** can open a ticket. The first word counts as the reported player only when it's the name of someone online, and each player can send one report every `report-cooldown-seconds`.
 
 ## Ban sources
 

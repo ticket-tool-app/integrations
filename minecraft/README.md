@@ -71,7 +71,7 @@ Staff can act on a player from Discord: from **Run an app action** on a ticket, 
 
 Staff text is shown as typed: its `&` and `§` codes aren't applied. A player who isn't online gets "Player offline" back on Discord, and unbanning someone who isn't banned says so.
 
-With `reports.enabled: true`, `/report [player] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When the game server sends a report** can open a ticket. The first word counts as the reported player only when it's the name of someone online. Each player can send one report every `cooldown-seconds`; the reporter is always the player who typed the command.
+With `reports.enabled: true`, `/report [player] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When a player sends a report in game** can open a ticket. The first word counts as the reported player only when it's the name of someone online. Each player can send one report every `cooldown-seconds`; the reporter is always the player who typed the command.
 
 ## What the plugin sends
 

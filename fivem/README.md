@@ -68,7 +68,7 @@ Staff can act on a player from Discord: from **Run an app action** on a ticket, 
 
 Players are found by the Discord account Cfx.re reports for them, so only players who connected Discord to FiveM or RedM can be reached. Unban isn't available: txAdmin and the framework ban lists have no supported way for another resource to lift a ban.
 
-With `ticket_tool_reports` on, `/report [server id] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When the game server sends a report** can open a ticket. The first word counts as the reported player only when it's the server id of someone online. The reporter needs Discord connected to FiveM, and can send one report every `ticket_tool_report_cooldown` seconds.
+With `ticket_tool_reports` on, `/report [server id] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When a player sends a report in game** can open a ticket. The first word counts as the reported player only when it's the server id of someone online. The reporter needs Discord connected to FiveM, and can send one report every `ticket_tool_report_cooldown` seconds.
 
 ## Ban sources
 

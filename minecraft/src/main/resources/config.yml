@@ -36,7 +36,7 @@ actions:
   unban: false
 
 # In-game reports: /report [player] <message> sends the report to Ticket Tool, where an
-# automation rule ("When the game server sends a report") can open a ticket. Needs the Community or Pro plan.
+# automation rule ("When a player sends a report in game") can open a ticket. Needs the Community or Pro plan.
 reports:
   enabled: false
   # Seconds a player has to wait between reports.
