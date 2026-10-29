@@ -102,6 +102,64 @@ export const LookupResult = {
  */
 export type RequestHandler = (request: LookupRequest) => Promise<LookupResult> | LookupResult;
 
+/** What staff can ask a plugin to do in game. Each is off until the server owner turns it on. */
+export type ActionKind = "message" | "warn" | "kick" | "unban";
+
+export const ACTION_KINDS: readonly ActionKind[] = ["message", "warn", "kick", "unban"];
+
+/** A `player.action` request from `/poll`. */
+export interface ActionRequest {
+  id: string;
+  expiresAt: Date;
+  player: RequestPlayer;
+  kind: ActionKind;
+  /** Plain text for the player, at most 500 characters; null for `unban`. */
+  message: string | null;
+  /** The staff member's Discord username, or `Ticket Tool` for an automation. */
+  actorName: string;
+}
+
+export type ActionError =
+  | "player_offline"
+  | "not_banned"
+  | "not_allowed"
+  | "unknown_player"
+  | "unsupported"
+  | "error";
+
+export type ActionResult = { ok: true } | { ok: false; error: ActionError; message?: string | null };
+
+export const ActionResult = {
+  done(): ActionResult {
+    return { ok: true };
+  },
+  failure(error: ActionError, message?: string | null): ActionResult {
+    return { ok: false, error, message: message ?? null };
+  },
+};
+
+/**
+ * Carries out actions the server owner turned on. The SDK answers
+ * `not_allowed` itself for any other kind, so this only sees enabled ones.
+ */
+export type ActionHandler = (request: ActionRequest) => Promise<ActionResult> | ActionResult;
+
+export type ReportOutcome =
+  | "opened"
+  /** No automation rule on the Discord server took the report. */
+  | "ignored"
+  | "rate_limited"
+  /** Reports are off in the plugin's config. */
+  | "not_enabled"
+  | "failed";
+
+export interface ReportResult {
+  outcome: ReportOutcome;
+  success: boolean;
+  /** The server's error code on failure, or a local one (`network`, `not_running`). */
+  error: string | null;
+}
+
 export type LinkOutcome =
   | "linked"
   | "relinked"

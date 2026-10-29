@@ -6,6 +6,10 @@ import * as Messages from "./messages";
 import { SdkLogger, silentLogger } from "./logger";
 import { Transport, apiBase } from "./transport";
 import {
+  ActionHandler,
+  ActionKind,
+  ActionRequest,
+  ActionResult,
   ClientState,
   ClientStatus,
   HelloReply,
@@ -14,11 +18,13 @@ import {
   LookupResult,
   PROTOCOL_VERSION,
   PluginInfo,
+  ReportResult,
   RequestHandler,
   isRunningState,
 } from "./types";
 
 export const CALL_TIMEOUT_MS = 10_000;
+export const ACTION_BUDGET_MS = 8_000;
 export const GOODBYE_TIMEOUT_MS = 2_000;
 export const PLAN_RETRY_MS = 60 * 60 * 1000;
 export const RATE_LIMIT_WAIT_MS = 60_000;
@@ -34,6 +40,15 @@ export interface ClientOptions {
   handler: RequestHandler;
   /** Read at each `/hello`, e.g. `["txadmin"]`. */
   banProviders?: () => readonly string[];
+  /** Carries out `player.action` requests. Without it every action is answered `not_allowed`. */
+  actionHandler?: ActionHandler;
+  /**
+   * The actions the server owner turned on, read at each `/hello` and checked
+   * for every request; anything else is answered `not_allowed`.
+   */
+  actions?: () => readonly ActionKind[];
+  /** Whether in-game reports are on, read at each `/hello` and before each report. */
+  reportsEnabled?: () => boolean;
   logger?: SdkLogger;
   /** Time allowed per answer before a timeout error is sent instead; capped by the request's expiry. */
   answerBudgetMs?: number;
@@ -77,6 +92,9 @@ export class TicketToolClient {
   readonly #plugin: PluginInfo;
   readonly #handler: RequestHandler;
   readonly #banProviders: () => readonly string[];
+  readonly #actionHandler: ActionHandler | null;
+  readonly #actions: () => readonly ActionKind[];
+  readonly #reportsEnabled: () => boolean;
   readonly #log: SdkLogger;
   readonly #clock: () => number;
   readonly #sleep: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -89,6 +107,7 @@ export class TicketToolClient {
   #running = false;
   #closed = false;
   #everConnected = false;
+  #needHello = true;
   #loop: Promise<void> | null = null;
   #inFlight = new Set<Promise<unknown>>();
 
@@ -107,6 +126,9 @@ export class TicketToolClient {
     this.#plugin = options.plugin;
     this.#handler = options.handler;
     this.#banProviders = options.banProviders ?? (() => []);
+    this.#actionHandler = options.actionHandler ?? null;
+    this.#actions = options.actions ?? (() => []);
+    this.#reportsEnabled = options.reportsEnabled ?? (() => false);
     this.#log = options.logger ?? silentLogger;
     this.#clock = options.clock ?? Date.now;
     this.#sleep = options.sleep ?? abortableSleep;
@@ -196,21 +218,63 @@ export class TicketToolClient {
     );
   }
 
+  /**
+   * Sends an in-game report. Pass the player who ran the command, never
+   * values from its arguments. Never rejects.
+   */
+  report(
+    from: Messages.ReportPlayer,
+    message: string,
+    target?: Messages.ReportPlayer | null,
+    server?: string | null,
+  ): Promise<ReportResult> {
+    if (this.#closed) return Promise.resolve(Messages.reportFailed("failed", "not_running"));
+    if (!this.#reportsEnabled()) return Promise.resolve(Messages.reportFailed("not_enabled", "not_enabled"));
+    if (!message.trim()) return Promise.resolve(Messages.reportFailed("failed", "empty_message"));
+    return this.#track(
+      (async () => {
+        try {
+          return Messages.reportReply(
+            await this.#transport.call(
+              "/event",
+              Messages.report(from, message, target, server),
+              CALL_TIMEOUT_MS,
+            ),
+          );
+        } catch (e) {
+          if (e instanceof ApiError) return Messages.reportError(e);
+          this.#log.warn(`Couldn't reach Ticket Tool to send ${from.name}'s report: ${rootMessage(e)}`);
+          return Messages.reportFailed("failed", "network");
+        }
+      })(),
+    );
+  }
+
+  /** Sends `/hello` again so the dashboard sees changed actions or reports, e.g. after a config reload. */
+  refreshHello(): void {
+    this.#needHello = true;
+  }
+
   async #runLoop(): Promise<void> {
-    let needHello = true;
+    this.#needHello = true;
     while (this.#running) {
       try {
-        if (needHello) {
+        if (this.#needHello) {
           const reply = Messages.helloReply(
             await this.#transport.call(
               "/hello",
-              Messages.hello(this.#plugin, this.#banProviders()),
+              Messages.hello(
+                this.#plugin,
+                this.#banProviders(),
+                this.#actionHandler ? this.#actions() : [],
+                this.#reportsEnabled() ? [Messages.REPORT_EVENT] : [],
+              ),
               CALL_TIMEOUT_MS,
               this.#stop.signal,
             ),
           );
           this.#hello = reply;
-          needHello = false;
+          this.#needHello = false;
           this.#everConnected = true;
           this.#log.info(
             `Connected to Ticket Tool as "${reply.keyName}" for Discord server ` +
@@ -225,10 +289,13 @@ export class TicketToolClient {
         for (const request of Messages.pollRequests(body)) {
           this.#dispatch(request);
         }
+        for (const action of Messages.pollActions(body)) {
+          this.#dispatchAction(action);
+        }
       } catch (e) {
         if (!this.#running || e instanceof AbortedError) break;
         if (e instanceof ApiError) {
-          needHello = (await this.#handleApiError(e)) || needHello;
+          this.#needHello = (await this.#handleApiError(e)) || this.#needHello;
         } else if (e instanceof HttpTimeoutError) {
           await this.#failed("Ticket Tool didn't answer in time", e, this.#backoff.next());
         } else {
@@ -297,6 +364,7 @@ export class TicketToolClient {
   }
 
   #dispatch(request: LookupRequest): void {
+    if (request.type === "player.action") return;
     if (request.type !== "player.lookup") {
       this.#log.debug("Ignoring request type " + request.type);
       return;
@@ -342,6 +410,62 @@ export class TicketToolClient {
       return;
     }
     await this.#respond(request, out);
+  }
+
+  #dispatchAction(request: ActionRequest): void {
+    const received = this.#serverNow();
+    if (request.expiresAt.getTime() <= received) {
+      this.#log.debug("Dropping expired action " + request.id);
+      return;
+    }
+    void this.#track(this.#act(request, received));
+  }
+
+  async #act(request: ActionRequest, received: number): Promise<void> {
+    const handler = this.#actionHandler;
+    if (!handler || !this.#actions().includes(request.kind)) {
+      this.#log.info(
+        `Refused a ${request.kind} from ${request.actorName}: that action is off in the plugin's config`,
+      );
+      await this.#respondAction(request, ActionResult.failure("not_allowed"));
+      return;
+    }
+    const deadline = Math.min(received + ACTION_BUDGET_MS, request.expiresAt.getTime());
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), Math.max(1, deadline - received));
+    });
+    let out: ActionResult;
+    try {
+      const result = await Promise.race([Promise.resolve().then(() => handler(request)), timeout]);
+      if (result === "timeout") {
+        out = ActionResult.failure("error", "The game server took too long to carry it out");
+      } else if (result == null) {
+        out = ActionResult.failure("error", "The plugin had no answer");
+      } else {
+        out = result;
+      }
+    } catch (e) {
+      this.#log.warn(`Action ${request.id} failed`, e);
+      out = ActionResult.failure("error", "The plugin hit an error carrying out this action");
+    } finally {
+      clearTimeout(timer);
+    }
+    // Unlike a lookup, a late action already happened in game, so staff still hear about it.
+    await this.#respondAction(request, out);
+  }
+
+  async #respondAction(request: ActionRequest, result: ActionResult): Promise<void> {
+    try {
+      await this.#transport.call("/respond", Messages.respondAction(request, result), CALL_TIMEOUT_MS);
+      this.#answered++;
+    } catch (e) {
+      if (e instanceof ApiError && e.error === "unknown_request") {
+        this.#log.debug(`Action ${request.id} expired before the answer arrived`);
+      } else {
+        this.#log.warn(`Couldn't send the result of action ${request.id}: ${rootMessage(e)}`);
+      }
+    }
   }
 
   async #respond(request: LookupRequest, result: LookupResult): Promise<void> {
