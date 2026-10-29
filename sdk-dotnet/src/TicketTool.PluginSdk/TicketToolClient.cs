@@ -9,12 +9,17 @@ namespace TicketTool.PluginSdk
     /// <summary>Answers one lookup. Called on a pool thread; hop to the game thread to read state.</summary>
     public delegate Task<LookupResult> LookupHandler(LookupRequest request, CancellationToken cancellation);
 
+    /// <summary>Carries out one player action. Called on a pool thread; hop to the game thread to act.</summary>
+    public delegate Task<ActionResult> ActionHandler(ActionRequest request, CancellationToken cancellation);
+
     public sealed class TicketToolClientOptions
     {
         public TicketToolClientOptions()
         {
             ApiUrl = TicketToolClient.DefaultApiUrl;
             BanProviders = () => new string[0];
+            Actions = () => new string[0];
+            ReportsEnabled = () => false;
             Logger = NullSdkLogger.Instance;
             Clock = () => DateTimeOffset.UtcNow;
             Delay = (wait, token) => Task.Delay(wait, token);
@@ -33,6 +38,18 @@ namespace TicketTool.PluginSdk
 
         /// <summary>Read at each /hello, e.g. ["simpleadmin", "server"].</summary>
         public Func<IList<string>> BanProviders { get; set; }
+
+        /// <summary>Carries out player.action requests. Without it every action is answered not_allowed.</summary>
+        public ActionHandler ActionHandler { get; set; }
+
+        /// <summary>
+        /// The actions the server owner turned on, read at each /hello and checked for
+        /// every request; anything else is answered not_allowed.
+        /// </summary>
+        public Func<IList<string>> Actions { get; set; }
+
+        /// <summary>Whether in-game reports are on, read at each /hello and before each report.</summary>
+        public Func<bool> ReportsEnabled { get; set; }
 
         public ISdkLogger Logger { get; set; }
 
@@ -60,6 +77,7 @@ namespace TicketTool.PluginSdk
         internal const string ApiPath = "/api/plugin/v1";
 
         internal static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(10);
+        internal static readonly TimeSpan ActionBudget = TimeSpan.FromSeconds(8);
         internal static readonly TimeSpan GoodbyeTimeout = TimeSpan.FromSeconds(2);
         internal static readonly TimeSpan PlanRetry = TimeSpan.FromHours(1);
         internal static readonly TimeSpan RateLimitWait = TimeSpan.FromMinutes(1);
@@ -69,6 +87,9 @@ namespace TicketTool.PluginSdk
         private readonly PluginInfo _plugin;
         private readonly LookupHandler _handler;
         private readonly Func<IList<string>> _banProviders;
+        private readonly ActionHandler _actionHandler;
+        private readonly Func<IList<string>> _actions;
+        private readonly Func<bool> _reportsEnabled;
         private readonly ISdkLogger _log;
         private readonly Func<DateTimeOffset> _clock;
         private readonly Func<TimeSpan, CancellationToken, Task> _delay;
@@ -85,6 +106,7 @@ namespace TicketTool.PluginSdk
         private volatile bool _running;
         private volatile bool _closed;
         private volatile bool _everConnected;
+        private volatile bool _needHello = true;
 
         private volatile ClientState _state = ClientState.Stopped;
         private volatile string _lastError;
@@ -104,6 +126,9 @@ namespace TicketTool.PluginSdk
             _plugin = options.Plugin;
             _handler = options.Handler;
             _banProviders = options.BanProviders ?? (() => new string[0]);
+            _actionHandler = options.ActionHandler;
+            _actions = options.Actions ?? (() => new string[0]);
+            _reportsEnabled = options.ReportsEnabled ?? (() => false);
             _log = options.Logger ?? NullSdkLogger.Instance;
             _clock = options.Clock ?? (() => DateTimeOffset.UtcNow);
             _delay = options.Delay ?? ((wait, token) => Task.Delay(wait, token));
@@ -207,20 +232,71 @@ namespace TicketTool.PluginSdk
             Stop();
         }
 
+        /// <summary>
+        /// Sends an in-game report. Pass the identity and name of the player who ran
+        /// the command, never values from its arguments. Never throws.
+        /// </summary>
+        /// <param name="target">The player the report is about, when the command names one; may be null.</param>
+        /// <param name="server">Server or map name; may be null.</param>
+        public async Task<ReportResult> ReportAsync(RequestPlayer from, string message, RequestPlayer target = null,
+            string server = null)
+        {
+            if (from == null) throw new ArgumentNullException("from");
+            if (message == null) throw new ArgumentNullException("message");
+            if (_closed) return new ReportResult(ReportOutcome.Failed, "not_running");
+            if (!_reportsEnabled()) return new ReportResult(ReportOutcome.NotEnabled, "not_enabled");
+            if (Text.EmptyToNull(message) == null) return new ReportResult(ReportOutcome.Failed, "empty_message");
+            try
+            {
+                return Messages.ReportReply(await _transport.CallAsync("/event",
+                    Messages.Report(from, message, target, server), CallTimeout, _stopping.Token).ConfigureAwait(false));
+            }
+            catch (ApiException e)
+            {
+                return Messages.ReportError(e);
+            }
+            catch (OperationCanceledException)
+            {
+                return new ReportResult(ReportOutcome.Failed, "not_running");
+            }
+            catch (Exception e)
+            {
+                _log.Warn("Couldn't reach Ticket Tool to send " + from.Name + "'s report: " + RootMessage(e), null);
+                return new ReportResult(ReportOutcome.Failed, "network");
+            }
+        }
+
+        /// <summary>Sends /hello again so the dashboard sees changed actions or reports, e.g. after a reload.</summary>
+        public void RefreshHello()
+        {
+            _needHello = true;
+        }
+
         private async Task RunLoopAsync()
         {
             CancellationToken stop = _stopping.Token;
-            bool needHello = true;
+            _needHello = true;
             while (_running)
             {
                 try
                 {
-                    if (needHello)
+                    if (_needHello)
                     {
-                        HelloReply reply = Messages.HelloReply(await _transport.CallAsync("/hello",
-                            Messages.Hello(_plugin, _banProviders()), CallTimeout, stop).ConfigureAwait(false));
+                        _needHello = false;
+                        HelloReply reply;
+                        try
+                        {
+                            reply = Messages.HelloReply(await _transport.CallAsync("/hello",
+                                Messages.Hello(_plugin, _banProviders(),
+                                    _actionHandler == null ? null : _actions(), _reportsEnabled()),
+                                CallTimeout, stop).ConfigureAwait(false));
+                        }
+                        catch (Exception)
+                        {
+                            _needHello = true;
+                            throw;
+                        }
                         _hello = reply;
-                        needHello = false;
                         _everConnected = true;
                         _log.Info("Connected to Ticket Tool as \"" + reply.KeyName + "\" for Discord server "
                                   + (reply.ServerName ?? reply.ServerId) + " (" + Key + ")");
@@ -232,6 +308,7 @@ namespace TicketTool.PluginSdk
                         .ConfigureAwait(false);
                     Recovered();
                     foreach (LookupRequest request in Messages.PollRequests(body)) Dispatch(request);
+                    foreach (ActionRequest action in Messages.PollActions(body)) DispatchAction(action);
                 }
                 catch (OperationCanceledException) when (stop.IsCancellationRequested)
                 {
@@ -240,7 +317,7 @@ namespace TicketTool.PluginSdk
                 catch (ApiException e)
                 {
                     if (!_running) break;
-                    needHello |= await HandleApiErrorAsync(e).ConfigureAwait(false);
+                    if (await HandleApiErrorAsync(e).ConfigureAwait(false)) _needHello = true;
                 }
                 catch (TimeoutException e)
                 {
@@ -308,6 +385,7 @@ namespace TicketTool.PluginSdk
 
         private void Dispatch(LookupRequest request)
         {
+            if (request.Type == ActionRequest.TypePlayerAction) return;
             if (request.Type != LookupRequest.TypePlayerLookup)
             {
                 _log.Debug("Ignoring request type " + request.Type);
@@ -370,6 +448,96 @@ namespace TicketTool.PluginSdk
                 return;
             }
             await RespondAsync(request, result).ConfigureAwait(false);
+        }
+
+        private void DispatchAction(ActionRequest request)
+        {
+            DateTimeOffset received = ServerNow();
+            if (request.ExpiresAt <= received)
+            {
+                _log.Debug("Dropping expired action " + request.Id);
+                return;
+            }
+            Task.Run(() => ActAsync(request, received));
+        }
+
+        private async Task ActAsync(ActionRequest request, DateTimeOffset received)
+        {
+            if (_actionHandler == null || !_actions().Contains(request.Kind))
+            {
+                _log.Info("Refused a " + request.Kind + " from " + request.ActorName
+                          + ": that action is off in the plugin's config");
+                await RespondActionAsync(request, ActionResult.Failure(ActionResult.NotAllowed)).ConfigureAwait(false);
+                return;
+            }
+            string identityField = Messages.IdentityField(_plugin.Type);
+            if (identityField != null && Messages.PlayerIdentity(request.Player, identityField) == null)
+            {
+                await RespondActionAsync(request, ActionResult.Failure(ActionResult.UnknownPlayer)).ConfigureAwait(false);
+                return;
+            }
+            DateTimeOffset budgetEnd = received + ActionBudget;
+            DateTimeOffset deadline = budgetEnd < request.ExpiresAt ? budgetEnd : request.ExpiresAt;
+            TimeSpan remaining = deadline - received;
+            if (remaining < TimeSpan.FromMilliseconds(1)) remaining = TimeSpan.FromMilliseconds(1);
+
+            ActionResult result;
+            using (var cts = new CancellationTokenSource())
+            {
+                Task<ActionResult> work;
+                try
+                {
+                    work = _actionHandler(request, cts.Token) ?? Task.FromResult<ActionResult>(null);
+                }
+                catch (Exception e)
+                {
+                    var tcs = new TaskCompletionSource<ActionResult>();
+                    tcs.SetException(e);
+                    work = tcs.Task;
+                }
+                Task finished = await Task.WhenAny(work, Task.Delay(remaining)).ConfigureAwait(false);
+                if (finished != work)
+                {
+                    cts.Cancel();
+                    result = ActionResult.Failure(ActionResult.Error, "The game server took too long to carry it out");
+                }
+                else if (work.IsFaulted || work.IsCanceled)
+                {
+                    _log.Warn("Action " + request.Id + " failed",
+                        work.Exception == null ? null : work.Exception.GetBaseException());
+                    result = ActionResult.Failure(ActionResult.Error, "The plugin hit an error carrying out this action");
+                }
+                else
+                {
+                    result = work.Result ?? ActionResult.Failure(ActionResult.Error, "The plugin had no answer");
+                }
+            }
+            // Unlike a lookup, a late action already happened in game, so staff still hear about it.
+            await RespondActionAsync(request, result).ConfigureAwait(false);
+        }
+
+        private async Task RespondActionAsync(ActionRequest request, ActionResult result)
+        {
+            try
+            {
+                await _transport.CallAsync("/respond", Messages.RespondAction(request, result), CallTimeout,
+                    _stopping.Token).ConfigureAwait(false);
+                Interlocked.Increment(ref _answered);
+            }
+            catch (ApiException e)
+            {
+                if (e.Error == "unknown_request")
+                    _log.Debug("Action " + request.Id + " expired before the answer arrived");
+                else
+                    _log.Warn("Ticket Tool refused the result of action " + request.Id + ": " + e.Message, null);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception e)
+            {
+                _log.Warn("Couldn't send the result of action " + request.Id + ": " + RootMessage(e), null);
+            }
         }
 
         private static Task<LookupResult> FromException(Exception e)

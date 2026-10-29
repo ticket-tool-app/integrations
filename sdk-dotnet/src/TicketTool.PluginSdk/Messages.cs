@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace TicketTool.PluginSdk
 {
@@ -11,7 +12,19 @@ namespace TicketTool.PluginSdk
         private static readonly HashSet<string> KnownParts =
             new HashSet<string> { LookupRequest.PartProfile, LookupRequest.PartBans };
 
+        internal const int MaxActionMessage = 500;
+        internal const int MaxReportMessage = 1000;
+        internal const string ReportEvent = "player.report";
+
+        private static readonly Regex Snowflake = new Regex("^[0-9]{15,21}$", RegexOptions.CultureInvariant);
+
         internal static Dictionary<string, object> Hello(PluginInfo info, IList<string> banProviders)
+        {
+            return Hello(info, banProviders, null, false);
+        }
+
+        internal static Dictionary<string, object> Hello(PluginInfo info, IList<string> banProviders,
+            IList<string> actions, bool reports)
         {
             var plugin = new Dictionary<string, object>
             {
@@ -26,6 +39,9 @@ namespace TicketTool.PluginSdk
             };
             if (banProviders != null && banProviders.Count > 0)
                 body["banProviders"] = banProviders.Take(8).Select(p => Text.Clip(p, 32)).ToList();
+            var on = ActionRequest.Kinds.Where(k => actions != null && actions.Contains(k)).Cast<object>().ToList();
+            if (on.Count > 0) body["actions"] = on;
+            if (reports) body["events"] = new List<object> { ReportEvent };
             return body;
         }
 
@@ -57,9 +73,7 @@ namespace TicketTool.PluginSdk
                 string type = JsonFields.String(req, "type");
                 DateTimeOffset? expiresAt = Instant(JsonFields.String(req, "expiresAt"));
                 if (id == null || type == null || !expiresAt.HasValue) continue;
-                var p = JsonFields.Object(req, "player");
-                var player = new RequestPlayer(JsonFields.String(p, "uuid"), JsonFields.String(p, "steamId"),
-                    JsonFields.String(p, "discordId"), JsonFields.String(p, "name"));
+                var player = Player(JsonFields.Object(req, "player"));
                 var include = new List<string>();
                 foreach (object part in JsonFields.List(req, "include"))
                 {
@@ -69,6 +83,86 @@ namespace TicketTool.PluginSdk
                 output.Add(new LookupRequest(id, type, expiresAt.Value, player, include));
             }
             return output;
+        }
+
+        private static RequestPlayer Player(Dictionary<string, object> p)
+        {
+            return new RequestPlayer(JsonFields.String(p, "uuid"), JsonFields.String(p, "steamId"),
+                JsonFields.String(p, "discordId"), JsonFields.String(p, "name"));
+        }
+
+        /// <summary>player.action requests; malformed entries and unknown kinds are skipped.</summary>
+        internal static List<ActionRequest> PollActions(Dictionary<string, object> body)
+        {
+            var output = new List<ActionRequest>();
+            foreach (object item in JsonFields.List(body, "requests"))
+            {
+                var req = item as Dictionary<string, object>;
+                if (req == null || JsonFields.String(req, "type") != ActionRequest.TypePlayerAction) continue;
+                string id = JsonFields.String(req, "id");
+                DateTimeOffset? expiresAt = Instant(JsonFields.String(req, "expiresAt"));
+                var action = JsonFields.Object(req, "action");
+                string kind = JsonFields.String(action, "kind");
+                if (id == null || !expiresAt.HasValue || kind == null || !ActionRequest.Kinds.Contains(kind)) continue;
+                string message = kind == ActionRequest.Unban
+                    ? null
+                    : Text.Clip(Text.EmptyToNull(JsonFields.String(action, "message")), MaxActionMessage);
+                string actor = Text.Clip(Text.EmptyToNull(JsonFields.String(JsonFields.Object(req, "actor"), "name")),
+                    64);
+                output.Add(new ActionRequest(id, expiresAt.Value, Player(JsonFields.Object(req, "player")), kind,
+                    message, actor));
+            }
+            return output;
+        }
+
+        internal static Dictionary<string, object> RespondAction(ActionRequest request, ActionResult result)
+        {
+            var body = new Dictionary<string, object> { { "requestId", request.Id } };
+            if (!result.IsFailure)
+            {
+                body["ok"] = true;
+                return body;
+            }
+            body["ok"] = false;
+            body["error"] = result.ErrorCode;
+            if (result.Message != null) body["message"] = result.Message;
+            return body;
+        }
+
+        internal static Dictionary<string, object> ReportPlayer(RequestPlayer p)
+        {
+            var m = new Dictionary<string, object>();
+            if (p.Uuid != null) m["uuid"] = p.Uuid;
+            if (SteamIds.IsSteamId64(p.SteamId)) m["steamId"] = p.SteamId;
+            if (p.DiscordId != null && Snowflake.IsMatch(p.DiscordId)) m["discordId"] = p.DiscordId;
+            m["name"] = Text.Clip(Text.EmptyToNull(p.Name) ?? "Unknown", 64);
+            return m;
+        }
+
+        internal static Dictionary<string, object> Report(RequestPlayer from, string message, RequestPlayer target,
+            string server)
+        {
+            return new Dictionary<string, object>
+            {
+                { "type", ReportEvent },
+                { "player", ReportPlayer(from) },
+                { "message", Text.Clip(message.Trim(), MaxReportMessage) },
+                { "target", target != null && Text.EmptyToNull(target.Name) != null ? ReportPlayer(target) : null },
+                { "server", Text.Clip(Text.EmptyToNull(server), 64) },
+            };
+        }
+
+        internal static ReportResult ReportReply(Dictionary<string, object> body)
+        {
+            return JsonFields.String(body, "result") == "opened"
+                ? new ReportResult(ReportOutcome.Opened, null)
+                : new ReportResult(ReportOutcome.Ignored, null);
+        }
+
+        internal static ReportResult ReportError(ApiException e)
+        {
+            string error = e.Error ?? "http_" + e.Status;
+            return new ReportResult(error == "rate_limited" ? ReportOutcome.RateLimited : ReportOutcome.Failed, error);
         }
 
         /// <summary>
@@ -91,11 +185,16 @@ namespace TicketTool.PluginSdk
 
         internal static string RequestIdentity(LookupRequest request, string field)
         {
+            return PlayerIdentity(request.Player, field);
+        }
+
+        internal static string PlayerIdentity(RequestPlayer player, string field)
+        {
             switch (field)
             {
-                case "uuid": return request.Player.Uuid;
-                case "discordId": return request.Player.DiscordId;
-                case "steamId": return SteamIds.IsSteamId64(request.Player.SteamId) ? request.Player.SteamId : null;
+                case "uuid": return player.Uuid;
+                case "discordId": return player.DiscordId;
+                case "steamId": return SteamIds.IsSteamId64(player.SteamId) ? player.SteamId : null;
                 default: return null;
             }
         }
