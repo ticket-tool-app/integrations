@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/ticket-tool-app/integrations/compare/rust-v1.0.0...rust-v1.1.0) (2026-10-29)
+
+
+### Features
+
+* **rust:** carry out staff actions and add /report ([90fedd3](https://github.com/ticket-tool-app/integrations/commit/90fedd32dfd7502f65d58f46a77ad28cde0d3a26))
+* staff actions and in-game reports for game server plugins ([53eb8fb](https://github.com/ticket-tool-app/integrations/commit/53eb8fb22b2c74ace87b81c1a2f61eb7e17079fe))
+
 ## 1.0.0 (2026-10-16)
 
 
