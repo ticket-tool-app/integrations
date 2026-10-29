@@ -17,6 +17,8 @@ public sealed class PluginTests : IDisposable
         {
             ["key"] = FakeTicketTool.Key, ["api-url"] = _server.Url, ["server-name"] = "main", ["debug"] = true,
         });
+        StubRuntime.AllPlayers.Clear();
+        BasePlayer.activePlayerList.Clear();
         var josh = new BasePlayer { displayName = "Josh", userIdString = Online, connected = true };
         StubRuntime.AllPlayers.Add(josh);
         BasePlayer.activePlayerList.Add(josh);
@@ -99,6 +101,84 @@ public sealed class PluginTests : IDisposable
         string secret = FakeTicketTool.Key.Split('.')[1];
         Assert.DoesNotContain(StubRuntime.Lines, l => l.Contains(secret));
         Assert.DoesNotContain(secret, status);
+    }
+
+    private async Task<object> Started(string extraConfig)
+    {
+        var config = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, object>>(StubRuntime.ConfigJson)!;
+        foreach (var kv in Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, object>>(extraConfig)!)
+            config[kv.Key] = kv.Value;
+        StubRuntime.ConfigJson = Newtonsoft.Json.JsonConvert.SerializeObject(config);
+        var plugin = new Oxide.Plugins.TicketToolLink();
+        Hook(plugin, "LoadConfig");
+        Hook(plugin, "Init");
+        Hook(plugin, "OnServerInitialized");
+        var until = DateTime.UtcNow.AddSeconds(10);
+        while (_server.Calls("/poll").Count == 0 && DateTime.UtcNow < until) await Task.Delay(20);
+        return plugin;
+    }
+
+    private Dictionary<string, object> Act(string id, string steamId, string kind, string? message)
+    {
+        _server.QueueLookup(FakeTicketTool.Action(id, steamId, 5000, kind, message));
+        Assert.True(_server.Responses.TryTake(out var r, 10000), "no answer for " + id);
+        return r!.Body;
+    }
+
+    [Fact]
+    public async Task CarriesOutOnlyTheActionsTurnedOn()
+    {
+        var plugin = await Started("{\"actions\":[\"kick\",\"message\",\"unban\",\"slay\"]}");
+        var hello = _server.Calls("/hello").Single().Body;
+        Assert.Equal(new List<object> { "message", "kick", "unban" }, hello["actions"]);
+        Assert.False(hello.ContainsKey("events"));
+        Assert.Contains(StubRuntime.Lines, l => l.Contains("\"slay\" isn't one of"));
+
+        Assert.Equal(true, Act("m", Online, "message", "<b>Hi</b>")["ok"]);
+        Assert.Contains(StubRuntime.Chat, l => l == Online + ": <color=#5865f2>[Staff] mod.alex:</color> Hi");
+        Assert.Equal("not_allowed", Act("w", Online, "warn", "Stop")["error"]);
+        Assert.Equal("player_offline", Act("k1", Stranger, "kick", "Bye")["error"]);
+        Assert.Equal("not_banned", Act("u1", Online, "unban", null)["error"]);
+        Assert.Equal(true, Act("u2", Banned, "unban", null)["ok"]);
+        Assert.False(ServerUsers.users.ContainsKey(ulong.Parse(Banned)));
+        Assert.Equal(true, Act("k2", Online, "kick", "Griefing")["ok"]);
+        Assert.Contains(StubRuntime.Chat, l => l == Online + " kicked: Kicked by staff: Griefing");
+        Assert.False(StubRuntime.OffMainThreadAccess, "game state was touched off the main thread");
+        Hook(plugin, "Unload");
+    }
+
+    [Fact]
+    public async Task SendsReportsFromTheChatCommand()
+    {
+        var plugin = await Started("{\"reports\":true}");
+        Assert.Equal(new List<object> { "player.report" }, _server.Calls("/hello").Single().Body["events"]);
+        var reporter = new ChatPlayer(Online, "Josh");
+        Hook(plugin, "CmdReport", reporter, "report", new[] { "josh", "is", "flying" });
+        var until = DateTime.UtcNow.AddSeconds(10);
+        while (reporter.Replies.Count < 2 && DateTime.UtcNow < until) await Task.Delay(20);
+        var body = _server.Calls("/event").Single().Body;
+        Assert.Equal("is flying", body["message"]);
+        Assert.Equal(Online, ((Dictionary<string, object>)body["player"])["steamId"]);
+        Assert.Equal("Josh", ((Dictionary<string, object>)body["target"])["name"]);
+        Assert.Equal("main", body["server"]);
+        Assert.Contains("reached the staff team", reporter.Replies.Last());
+
+        Hook(plugin, "CmdReport", reporter, "report", new[] { "again" });
+        Assert.Contains("You just sent a report", reporter.Replies.Last());
+        Assert.Single(_server.Calls("/event"));
+        Hook(plugin, "Unload");
+    }
+
+    private sealed class ChatPlayer(string id, string name) : Oxide.Core.Libraries.Covalence.IPlayer
+    {
+        public readonly List<string> Replies = new();
+        public string Id => id;
+        public string Name => name;
+        public bool IsConnected => true;
+        public bool IsServer => false;
+        public bool IsAdmin => false;
+        public bool HasPermission(string perm) => false;
+        public void Reply(string message) { lock (Replies) Replies.Add(message); }
     }
 
     private sealed class KnownPlayer(string id, string name) : Oxide.Core.Libraries.Covalence.IPlayer

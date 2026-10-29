@@ -35,6 +35,8 @@ namespace Oxide.Plugins
         private string _setupProblem;
         private Dictionary<string, SeenEntry> _seen = new Dictionary<string, SeenEntry>();
         private bool _seenDirty;
+        private readonly Dictionary<string, DateTime> _lastReport = new Dictionary<string, DateTime>();
+        private string _reportCommand;
 
         private class PluginConfig
         {
@@ -43,6 +45,15 @@ namespace Oxide.Plugins
             [JsonProperty("api-url")] public string ApiUrl = TicketToolClient.DefaultApiUrl;
 
             [JsonProperty("server-name")] public string ServerName = "";
+
+            // Each one stays off until the owner lists it: message, warn, kick, unban.
+            [JsonProperty("actions")] public List<string> Actions = new List<string>();
+
+            [JsonProperty("reports")] public bool Reports;
+
+            [JsonProperty("report-command")] public string ReportCommand = "report";
+
+            [JsonProperty("report-cooldown-seconds")] public int ReportCooldownSeconds = 60;
 
             [JsonProperty("debug")] public bool Debug;
         }
@@ -73,6 +84,23 @@ namespace Oxide.Plugins
                 LoadDefaultConfig();
             }
             if (_config.ApiUrl == null) _config.ApiUrl = TicketToolClient.DefaultApiUrl;
+            if (_config.Actions == null) _config.Actions = new List<string>();
+            var actions = new List<string>();
+            foreach (string kind in ActionRequest.Kinds)
+                foreach (string listed in _config.Actions)
+                    if (listed != null && listed.Trim().ToLowerInvariant() == kind && !actions.Contains(kind)) actions.Add(kind);
+            foreach (string listed in _config.Actions)
+                if (listed == null || !ActionRequest.Kinds.Contains(listed.Trim().ToLowerInvariant()))
+                    PrintWarning("{0}", "actions: \"" + listed + "\" isn't one of message, warn, kick, unban; ignoring it");
+            _config.Actions = actions;
+            string command = (_config.ReportCommand ?? "").Trim().TrimStart('/').ToLowerInvariant();
+            if (command.Length == 0 || command.Length > 32 || !IsCommandName(command))
+            {
+                PrintWarning("{0}", "report-command \"" + _config.ReportCommand + "\" isn't a valid command name; using report");
+                command = "report";
+            }
+            _config.ReportCommand = command;
+            if (_config.ReportCooldownSeconds < 0) _config.ReportCooldownSeconds = 60;
             SaveConfig();
         }
 
@@ -85,6 +113,9 @@ namespace Oxide.Plugins
         {
             permission.RegisterPermission(PermAdmin, this);
             AddCovalenceCommand(new[] { "ticketlink", "tickettool" }, nameof(CmdTicketLink));
+            // Registered once: a renamed command takes effect when the plugin is reloaded.
+            _reportCommand = _config != null ? _config.ReportCommand : "report";
+            AddCovalenceCommand(new[] { _reportCommand }, nameof(CmdReport));
             try
             {
                 _seen = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<string, SeenEntry>>(SeenDataFile)
@@ -143,6 +174,9 @@ namespace Oxide.Plugins
                     Plugin = new PluginInfo("rust", "ticket-tool-rust", PluginVersion, Platform()),
                     BanProviders = () => new[] { BanProvider },
                     Handler = HandleLookup,
+                    ActionHandler = HandleAction,
+                    Actions = () => _config.Actions,
+                    ReportsEnabled = () => _config.Reports,
                     Logger = new OxideLogger(this, _config.Debug),
                     Sender = new WebRequestSender(),
                 });
@@ -234,6 +268,133 @@ namespace Oxide.Plugins
                 AddFields(profile, id, steamId);
             }
             return LookupResult.Answer(profile, bans);
+        }
+
+        // Called on a pool thread, like lookups; the action runs on the next server tick.
+        private Task<ActionResult> HandleAction(ActionRequest request, CancellationToken cancellation)
+        {
+            var result = new TaskCompletionSource<ActionResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            NextTick(() =>
+            {
+                if (cancellation.IsCancellationRequested) return;
+                try
+                {
+                    result.TrySetResult(Act(request));
+                }
+                catch (Exception e)
+                {
+                    result.TrySetException(e);
+                }
+            });
+            return result.Task;
+        }
+
+        private ActionResult Act(ActionRequest request)
+        {
+            string steamId = request.Player.SteamId;
+            ulong id;
+            if (!ulong.TryParse(steamId, NumberStyles.None, CultureInfo.InvariantCulture, out id))
+                return ActionResult.Failure(ActionResult.UnknownPlayer);
+            if (request.Kind == ActionRequest.Unban)
+            {
+                if (!ReadBan(id).Banned) return ActionResult.Failure(ActionResult.NotBanned);
+                ServerUsers.Remove(id);
+                ServerUsers.Save();
+                Puts("{0}", request.ActorName + " (Ticket Tool) unbanned " + steamId);
+                return ActionResult.Done();
+            }
+            BasePlayer player = BasePlayer.FindAwakeOrSleeping(steamId);
+            if (player == null || !player.IsConnected) return ActionResult.Failure(ActionResult.PlayerOffline);
+            // Staff text is shown as typed, not as Rust rich text.
+            string message = Text.StripFormatting(request.Text ?? "");
+            switch (request.Kind)
+            {
+                case ActionRequest.Message:
+                    player.ChatMessage("<color=#5865f2>[Staff] " + Text.StripFormatting(request.ActorName) + ":</color> " + message);
+                    break;
+                case ActionRequest.Warn:
+                    player.ChatMessage("<color=#ff5050>Warning from staff:</color> " + message);
+                    break;
+                case ActionRequest.Kick:
+                    player.Kick(message.Length > 0 ? "Kicked by staff: " + message : "Kicked by staff");
+                    break;
+                default:
+                    return ActionResult.Failure(ActionResult.Unsupported);
+            }
+            Puts("{0}", request.ActorName + " (Ticket Tool) sent a " + request.Kind + " to " + player.displayName);
+            return ActionResult.Done();
+        }
+
+        private void CmdReport(IPlayer player, string command, string[] args)
+        {
+            if (player.IsServer || !SteamIds.IsSteamId64(player.Id))
+            {
+                player.Reply("Only players can send a report.");
+                return;
+            }
+            TicketToolClient client = _client;
+            if (!_config.Reports || client == null)
+            {
+                player.Reply("Reports aren't turned on for this server.");
+                return;
+            }
+            BasePlayer target = args.Length > 1 ? FindOnlineByName(args[0]) : null;
+            string text = string.Join(" ", args, target == null ? 0 : 1, args.Length - (target == null ? 0 : 1)).Trim();
+            if (text.Length == 0)
+            {
+                player.Reply("Type /" + _reportCommand + " <message>, or /" + _reportCommand + " <player> <message> to report someone.");
+                return;
+            }
+            DateTime last;
+            DateTime now = DateTime.UtcNow;
+            if (_lastReport.TryGetValue(player.Id, out last) && (now - last).TotalSeconds < _config.ReportCooldownSeconds)
+            {
+                int wait = Math.Max(1, (int)Math.Ceiling(_config.ReportCooldownSeconds - (now - last).TotalSeconds));
+                player.Reply("You just sent a report. You can send another in " + wait + "s.");
+                return;
+            }
+            _lastReport[player.Id] = now;
+            player.Reply("Sending your report...");
+            string name = player.Name;
+            RequestPlayer from = new RequestPlayer(null, player.Id, null, name);
+            RequestPlayer about = target == null ? null : new RequestPlayer(null, target.UserIDString, null, target.displayName);
+            client.ReportAsync(from, text, about, ServerName()).ContinueWith(t => NextTick(() =>
+            {
+                ReportResult result = t.Result;
+                if (result.Outcome == ReportOutcome.Failed)
+                {
+                    _lastReport.Remove(player.Id);
+                    if (result.Error == "plan_not_entitled") PrintWarning("{0}", "Reports need the Pro plan on the Discord server.");
+                    else if (result.Error != "not_running") PrintWarning("{0}", "Sending " + name + "'s report failed: " + result.Error);
+                }
+                if (player.IsConnected) player.Reply(ReportReply(result.Outcome));
+            }));
+        }
+
+        private static string ReportReply(ReportOutcome outcome)
+        {
+            switch (outcome)
+            {
+                case ReportOutcome.Opened: return "Thanks! Your report reached the staff team.";
+                case ReportOutcome.Ignored: return "The staff team isn't taking reports this way right now. Try their Discord server instead.";
+                case ReportOutcome.RateLimited: return "Lots of reports are coming in right now. Try again in a minute.";
+                case ReportOutcome.NotEnabled: return "Reports aren't turned on for this server.";
+                default: return "Your report couldn't be sent. Try again in a minute.";
+            }
+        }
+
+        private static BasePlayer FindOnlineByName(string name)
+        {
+            foreach (BasePlayer p in BasePlayer.activePlayerList)
+                if (p != null && string.Equals(p.displayName, name, StringComparison.OrdinalIgnoreCase)) return p;
+            return null;
+        }
+
+        private static bool IsCommandName(string s)
+        {
+            foreach (char c in s)
+                if (!(c >= 'a' && c <= 'z') && !(c >= '0' && c <= '9') && c != '_') return false;
+            return true;
         }
 
         private void AddFields(PlayerProfile profile, ulong id, string steamId)
@@ -364,6 +525,8 @@ namespace Oxide.Plugins
             if (s.Hello != null)
                 lines.Add("Discord server: " + (s.Hello.ServerName ?? s.Hello.ServerId) + " (key \"" + s.Hello.KeyName + "\")");
             lines.Add("Ban source: Rust server ban list");
+            lines.Add("Actions from Discord: " + (_config.Actions.Count > 0 ? string.Join(", ", _config.Actions.ToArray()) : "none"));
+            lines.Add("In-game reports: " + (_config.Reports ? "on (/" + _reportCommand + ")" : "off"));
             lines.Add("Lookups answered: " + s.Answered);
             if (s.LastError != null) lines.Add("Last problem: " + s.LastError);
             return string.Join("\n", lines.ToArray());
