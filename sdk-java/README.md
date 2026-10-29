@@ -41,6 +41,28 @@ client.stop();                  // sends /goodbye
 
 `apiUrl` defaults to `https://dash.ticket-tool.app`; it accepts a host root or a full base ending in `/api/plugin/v1`. Plain `http://` is only allowed for `localhost`, for development.
 
+### Player actions and reports
+
+Both are off unless the plugin turns them on, and a plugin should only do that when the server owner did:
+
+```java
+TicketToolClient.builder()
+        // ...as above
+        .actionHandler(action -> game.callForPlayer(action.playerUuid(), player -> {
+            // action.kind() is message, warn, kick or unban; action.message() is the staff text.
+            player.kick(action.message());
+            return ActionResult.done();
+        }))
+        .actions(() -> settings.actions())          // the kinds the owner turned on; read at each /hello
+        .reportsEnabled(() -> settings.reports())
+        .build();
+
+client.report(player.uuid(), player.name(), "Someone is flying", null, "survival") // never fails
+        .thenAccept(result -> tell(player, result.outcome()));
+```
+
+The SDK answers `not_allowed` itself for a kind that isn't in `actions()`, without calling the handler, so a bug in the plugin can't run an action the owner left off. Call `client.refreshHello()` after the owner changes either setting.
+
 `client.status()` returns a `ClientStatus` snapshot (state, last error phrased for an admin, the `/hello` reply, lookups answered, clock offset) for a status command.
 
 ## Tests

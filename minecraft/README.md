@@ -29,10 +29,11 @@ Install the plugin on **each backend**, not the proxy, with one key per backend.
 | Command | Permission | Default | What it does |
 | --- | --- | --- | --- |
 | `/ttlink <code>` | `tickettool.link` | everyone | Links the player's Minecraft account to the Discord account that made the code |
+| `/report [player] <message>` | `tickettool.report` | everyone | Sends a report to the staff team on Discord, when `reports.enabled` is on |
 | `/ticketlink status` | `tickettool.admin` | op | Connection state, key id, Discord server, ban source, last problem |
 | `/ticketlink reload` | `tickettool.admin` | op | Re-reads `config.yml` and `messages.yml` and reconnects |
 
-`/tickettool` works as an alias for `/ticketlink`.
+`/tickettool` works as an alias for `/ticketlink`, and `/ttreport` for `/report` (use it when another plugin owns `/report`).
 
 `/ttlink` only works for players, never the console or command blocks, and always sends the UUID and name of the player who typed it. A player can try once every 5 seconds (`link-cooldown-seconds`). If Mojang is briefly unreachable, the plugin retries once after 3 seconds before telling the player to try again; the code stays valid.
 
@@ -43,15 +44,38 @@ key: ""                      # the full key from the dashboard
 server-name: ""              # backend name staff see; empty uses the key's name
 ban-provider: auto           # auto, litebans, advancedban, libertybans or vanilla
 link-cooldown-seconds: 5
+actions:                     # what staff can do from Discord; each is off until set to true
+  message: false
+  warn: false
+  kick: false
+  unban: false
+reports:
+  enabled: false             # turns on /report
+  cooldown-seconds: 60
 api-url: "https://dash.ticket-tool.app"
 debug: false
 ```
 
 All player-facing text is in `messages.yml`, with `&` color codes and `{placeholders}`. Set a message to `""` to turn it off.
 
+## Staff actions and in-game reports
+
+Staff can act on a player from Discord: from **Run an app action** on a ticket, a flow, or an automation rule. Every action is off until you turn it on, and Ticket Tool only offers the ones you did. Actions and reports need the Pro plan.
+
+| Action | What happens in game |
+| --- | --- |
+| `message` | The player gets a chat message from the staff member (`action.message` in `messages.yml`) |
+| `warn` | The player gets a warning in chat (`action.warn`) |
+| `kick` | The player is kicked with the reason staff typed |
+| `unban` | The ban is lifted through the ban plugin in use (`litebans:unban`, `advancedban:unban`, `libertybans:unban` or `minecraft:pardon`, run as the console) |
+
+Staff text is shown as typed: its `&` and `§` codes aren't applied. A player who isn't online gets "Player offline" back on Discord, and unbanning someone who isn't banned says so.
+
+With `reports.enabled: true`, `/report [player] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When the game server sends a report** can open a ticket. The first word counts as the reported player only when it's the name of someone online. Each player can send one report every `cooldown-seconds`; the reporter is always the player who typed the command.
+
 ## What the plugin sends
 
-Only what the [protocol](../spec/PROTOCOL.md) defines: for a lookup, the player's UUID, name, online status, last-seen and first-join times and the `server-name`; for bans, whether there's an active ban, its reason (color codes removed, at most 2,000 characters), start, expiry, who issued it and how many are active. No IP addresses, chat or inventories. Ban reasons appear on the private staff card in Ticket Tool, so write them with that in mind.
+Only what the [protocol](../spec/PROTOCOL.md) defines: for a lookup, the player's UUID, name, online status, last-seen and first-join times and the `server-name`; for bans, whether there's an active ban, its reason (color codes removed, at most 2,000 characters), start, expiry, who issued it and how many are active. For a report, the reporter's UUID and name, the message, the reported player's name and the `server-name`. No IP addresses, chat or inventories. Ban reasons appear on the private staff card in Ticket Tool, so write them with that in mind.
 
 Playtime isn't sent: version 1 of the protocol has no field for it.
 

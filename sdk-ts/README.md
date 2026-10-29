@@ -42,6 +42,29 @@ await client.stop();                                    // sends /goodbye
 
 `apiUrl` defaults to `https://dash.ticket-tool.app`; it accepts a host root or a full base ending in `/api/plugin/v1`. Plain `http://` is only allowed for `localhost`, for development.
 
+### Player actions and reports
+
+Both are off unless the plugin turns them on, and a plugin should only do that when the server owner did:
+
+```ts
+const client = new TicketToolClient({
+  // ...as above
+  actionHandler: async (action) => {
+    // action.kind is "message", "warn", "kick" or "unban"; action.message is the staff text.
+    const player = findOnline(action.player.discordId);
+    if (!player) return ActionResult.failure("player_offline");
+    kick(player, action.message ?? "Kicked by staff");
+    return ActionResult.done();
+  },
+  actions: () => config.actions,          // the kinds the owner turned on; read at each /hello
+  reportsEnabled: () => config.reports,
+});
+
+const report = await client.report({ discordId, name }, "Someone is flying", null, "main"); // never rejects
+```
+
+The SDK answers `not_allowed` itself for a kind that isn't in `actions()`, without calling the handler, so a bug in the plugin can't run an action the owner left off. Call `client.refreshHello()` after the owner changes either setting.
+
 `client.status()` returns a snapshot (state, last error phrased for an admin, the `/hello` reply, lookups answered, clock offset) for a status command.
 
 The SDK applies the protocol's limits when it writes an answer: names up to 64 characters, at most 6 `fields` (labels 32, values 100), ban reasons up to 2,000 characters, and a `steamId` or `discordId` that isn't well formed is left out. Color codes are the plugin's business; `stripCfxColors` and `stripMinecraftColors` are exported for that.

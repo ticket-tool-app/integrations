@@ -37,6 +37,8 @@ Running several servers? Give each its own key and its own `ticket_tool_server_n
 
 To let an in-game admin group use it: `add_ace group.admin command.ticketlink allow`.
 
+When reports are on, players also get `/report [server id] <message>` (the name is set by `ticket_tool_report_command`).
+
 ## Configuration
 
 Set these in `server.cfg` with `set`. Each one can also go in `resources/ticket-tool-link/config.json` (copy `config.example.json`); a convar that is set wins over the file.
@@ -47,8 +49,26 @@ Set these in `server.cfg` with `set`. Each one can also go in `resources/ticket-
 | `ticket_tool_server_name` | `serverName` | | Server name staff see; empty uses the key's name |
 | `ticket_tool_ban_provider` | `banProvider` | `auto` | `auto`, `txadmin`, `server` or `none` |
 | `ticket_tool_txadmin_db` | `txAdminDb` | | Path to txAdmin's `playersDB.json` (or its txData folder) if it isn't found on its own |
+| `ticket_tool_actions` | `actions` | | Staff actions to allow, for example `message,warn,kick`. Empty allows none |
+| `ticket_tool_reports` | `reports` | `false` | `true` turns on the report command |
+| `ticket_tool_report_command` | `reportCommand` | `report` | Chat command name for reports |
+| `ticket_tool_report_cooldown` | `reportCooldown` | `60` | Seconds between reports per player |
 | `ticket_tool_api_url` | `apiUrl` | `https://dash.ticket-tool.app` | Only change this if Ticket Tool support asks you to |
 | `ticket_tool_debug` | `debug` | `false` | More detail in the console |
+
+## Staff actions and in-game reports
+
+Staff can act on a player from Discord: from **Run an app action** on a ticket, a flow, or an automation rule. Every action is off until you turn it on, and Ticket Tool only offers the ones you did. Actions and reports need the Pro plan.
+
+| Action | What happens in game |
+| --- | --- |
+| `message` | The player gets a chat message from the staff member |
+| `warn` | The player gets a warning in chat |
+| `kick` | The player is dropped with the reason staff typed |
+
+Players are found by the Discord account Cfx.re reports for them, so only players who connected Discord to FiveM or RedM can be reached. Unban isn't available: txAdmin and the framework ban lists have no supported way for another resource to lift a ban.
+
+With `ticket_tool_reports` on, `/report [server id] <message>` sends the report to Ticket Tool, where an automation rule with the trigger **When the game server sends a report** can open a ticket. The first word counts as the reported player only when it's the server id of someone online. The reporter needs Discord connected to FiveM, and can send one report every `ticket_tool_report_cooldown` seconds.
 
 ## Ban sources
 
