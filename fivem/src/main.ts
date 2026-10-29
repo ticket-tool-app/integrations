@@ -1,4 +1,5 @@
 import { ClientStatus, SdkLogger, TicketToolClient } from "@ticket-tool/plugin-sdk";
+import { createActionHandler } from "./actions";
 import { activeSources, providerNames } from "./bans";
 import { EasyAdminBans } from "./bans/easyadmin";
 import { QbBans } from "./bans/qbcore";
@@ -9,6 +10,7 @@ import { Frameworks } from "./frameworks";
 import { onlinePlayer } from "./identity";
 import { createLookupHandler } from "./lookup";
 import { Natives, fromGlobals } from "./natives";
+import { registerReportCommand } from "./report";
 import { SeenStore } from "./seen-store";
 
 const HEARTBEAT_MS = 5 * 60 * 1000;
@@ -58,6 +60,8 @@ export function main(n: Natives = fromGlobals()): Resource {
     warn: (m) => logger.warn(m),
   });
 
+  const actionHandler = createActionHandler(n, (m) => logger.info(m));
+
   const touchSource = (source: string) => {
     try {
       store.touch(onlinePlayer(n, source), frameworks.fields(source));
@@ -88,6 +92,9 @@ export function main(n: Natives = fromGlobals()): Resource {
         banProviders: () => providerNames(sources()),
         logger,
         handler,
+        actionHandler,
+        actions: () => settings.actions,
+        reportsEnabled: () => settings.reportsEnabled,
       });
     } catch (e) {
       keyProblem = (e as Error).message;
@@ -123,6 +130,8 @@ export function main(n: Natives = fromGlobals()): Resource {
       lines.push(`Key: ${client.key.displayPrefix}${s.hello?.keyName ? ` ("${s.hello.keyName}")` : ""}`);
       if (s.hello) lines.push(`Discord server: ${s.hello.serverName ?? s.hello.serverId}`);
       lines.push(`Lookups answered: ${s.answered}`);
+      lines.push(`Actions from Discord: ${settings.actions.length ? settings.actions.join(", ") : "none"}`);
+      lines.push(`In-game reports: ${settings.reportsEnabled ? `on (/${reportCommand})` : "off"}`);
       if (Math.abs(s.clockOffsetSeconds) > 5) lines.push(`Clock offset: ${s.clockOffsetSeconds}s from Ticket Tool`);
       if (s.lastError) lines.push(`Last problem: ${s.lastError}${s.lastErrorAt ? ` (${ago(s.lastErrorAt)} ago)` : ""}`);
     }
@@ -160,6 +169,9 @@ export function main(n: Natives = fromGlobals()): Resource {
   n.on("onResourceStop", (name: string) => {
     if (name === resourceName) void stop();
   });
+
+  // Command names can't be unregistered, so a changed name takes effect on a resource restart.
+  const reportCommand = registerReportCommand(n, () => settings, () => client, (m) => logger.warn(m));
 
   touchAll();
   connect();

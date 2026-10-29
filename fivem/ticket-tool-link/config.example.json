@@ -4,5 +4,9 @@
   "banProvider": "auto",
   "apiUrl": "https://dash.ticket-tool.app",
   "txAdminDb": "",
+  "actions": [],
+  "reports": false,
+  "reportCommand": "report",
+  "reportCooldown": 60,
   "debug": false
 }
